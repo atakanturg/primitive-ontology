@@ -3,11 +3,15 @@ main = "server.ts"
 compatibility_date = "2026-05-12"
 compatibility_flags = [ "nodejs_compat" ]
 
-workers_dev = false
-
+# This is where your Worker lives
 [env.production]
 route = "ontology.primitive-os.cc/*"
 
+# This serves your Vite-built frontend
 [assets]
 directory = "./dist"
 binding = "ASSETS"
+
+[vars]
+# You can define non-sensitive public variables here
+NODE_ENV = "production"
