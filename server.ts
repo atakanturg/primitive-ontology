@@ -58,17 +58,12 @@ async function processData({
   experimental_mode: boolean;
 }): Promise<void> {
   try {
-    // Sync initial status and experimental flag to Supabase
     await supabase
       .from("watchlist")
-      .update({ 
-        status: "scanning", 
-        last_updated: new Date().toISOString(), 
-        experimental_mode 
-      })
+      .update({ status: "scanning", last_updated: new Date().toISOString(), experimental_mode })
       .eq("id", row_id);
 
-    // ── PASS 1: Objective Keyword Generation ──
+    // ── PASS 1: Objective Keyword Generation (Groq) ──
     const kwPrompt = `Ticker: "${ticker}". Provide a raw JSON object for equity research:
     {
       "companyName": "Legal Entity Name",
@@ -80,52 +75,46 @@ async function processData({
 
     // ── Parallel Data Ingestion ──
     const [secData, scholarData, newsData] = await Promise.allSettled([
-      fetchSECData(ticker, env.SEC_API_KEY),
+      fetchSECData(ticker, env.STOCKFIT_API_KEY),
       fetchScholarData(keywords.researchKeywords, env.SEMANTIC_SCHOLAR_API_KEY),
       fetchNewsData(keywords.companyName, keywords.newsKeywords, env.FIRECRAWL_API_KEY),
     ]);
 
     const bundle = `
-=== SEC REGULATORY FILINGS ===
+=== SEC FILINGS (via StockFit) ===
 ${secData.status === 'fulfilled' ? secData.value : 'Unavailable'}
 
-=== TECHNICAL/ACADEMIC CONTEXT ===
+=== TECHNICAL CONTEXT ===
 ${scholarData.status === 'fulfilled' ? scholarData.value : 'Unavailable'}
 
-=== MATERIAL NEWS & PRESS ===
+=== MATERIAL NEWS ===
 ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
 
-    // ── PASS 2: Objective Synthesis ──
+    // ── PASS 2: Ruthless Synthesis (Groq) ──
     const sentimentSchema = experimental_mode ? '"Bullish" | "Bearish"' : '"Bullish" | "Bearish" | "Neutral"';
     
-    const systemPrompt = `You are a cold, objective quantitative analyst. You have no bias. 
-    Your mission is to categorize a stock based on the balance of probabilities found in raw data.
-    
-    OBJECTIVE CLASSIFICATION RULES:
-    1. BULLISH: Requires positive material catalysts (e.g., debt reduction, revenue beats, new patented tech).
-    2. BEARISH: Requires negative material catalysts (e.g., default risk, shrinking margins, regulatory fines).
-    3. NEUTRAL: Default for routine operations, business-as-usual filings, or high-uncertainty data where neither side has a 60% probability lead.
-    
-    Hierarchy of Truth: SEC (Verified Facts) > Research (Structural Trends) > News (Market Sentiment).`;
+    const systemPrompt = `You are a cold, objective quantitative analyst. Hierarchy: SEC > Research > News.
+    - BULLISH: Evidence of growth, de-leveraging, or moat.
+    - BEARISH: Evidence of decay, cash burn, or insolvency.
+    - NEUTRAL: Routine operations or business-as-usual.`;
     
     const experimentalClause = experimental_mode
-      ? `CRITICAL: Experimental Mode is ON. You are FORBIDDEN from choosing 'Neutral'. You must break the tie. Analyze the smallest delta in the data and commit to a binary 'Bullish' or 'Bearish' verdict.`
-      : `Neutral is the expected baseline for low-volatility, routine financial data.`;
+      ? `CRITICAL: Experimental Mode ON. FORBIDDEN to choose 'Neutral'. Analyze the smallest delta and pick a binary side.`
+      : `Neutral is the default baseline for routine data.`;
 
-    const userPrompt = `Analyze ticker $${ticker}. ${experimentalClause}\n\nDATA BUNDLE:\n${bundle}\n\nReturn ONLY a JSON object:
+    const userPrompt = `Analyze ticker $${ticker}. ${experimentalClause}\n\nBUNDLE:\n${bundle}\n\nReturn ONLY a JSON object:
     {
       "sentiment": ${sentimentSchema},
       "conviction_score": <1-10>,
-      "primary_catalyst": "[SEC/Research/News] One blunt, objective sentence.",
-      "key_risks": "The single most dangerous counter-thesis.",
+      "primary_catalyst": "[SEC/Research/News] Blunt sentence.",
+      "key_risks": "Single most dangerous counter-thesis.",
       "time_horizon": "Short/Medium/Long-term",
-      "reasoning": "2-3 sentences of cold synthesis. If Neutral, explain why the signal is noise.",
+      "reasoning": "2-3 ruthless sentences of cold synthesis.",
       "data_quality": "High|Medium|Low"
     }`;
 
     const analysis = await askGroq(userPrompt, env.GROQ_API_KEY, true, systemPrompt);
 
-    // ── Final Update ──
     const { data: existing } = await supabase.from("watchlist").select("analysis_count").eq("id", row_id).single();
     const currentCount = existing?.analysis_count || 0;
 
@@ -141,13 +130,14 @@ ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
     console.error("Analysis failure:", error.message);
     await supabase.from("watchlist").update({
       status: "idle",
-      reasoning: `Objectivity Error: ${error.message}`,
+      reasoning: `Intelligence Error: ${error.message}`,
       last_updated: new Date().toISOString(),
     }).eq("id", row_id);
   }
 }
 
-// ── Groq Logic ──
+// ── Helpers ──
+
 async function askGroq(prompt: string, apiKey: string, isJson: boolean, systemMsg?: string) {
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
@@ -162,7 +152,7 @@ async function askGroq(prompt: string, apiKey: string, isJson: boolean, systemMs
         { role: "user", content: prompt }
       ],
       response_format: isJson ? { type: "json_object" } : undefined,
-      temperature: 0.05, // Near-zero for objective consistency
+      temperature: 0.05,
       max_tokens: 1024
     })
   });
@@ -177,19 +167,19 @@ async function askGroq(prompt: string, apiKey: string, isJson: boolean, systemMs
   return isJson ? JSON.parse(content.replace(/`{3}json|`{3}/g, "").trim()) : content;
 }
 
-// ── Data Fetchers ──
 async function fetchSECData(ticker: string, apiKey: string) {
   if (!apiKey) return "Key missing.";
-  const res = await fetch(`https://api.sec-api.io?token=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query: { query_string: { query: `ticker:${ticker} AND formType:("8-K" OR "10-Q")` } },
-      from: "0", size: "3", sort: [{ filedAt: { order: "desc" } }]
-    })
-  });
-  const data: any = await res.json();
-  return data?.filings?.map((f: any) => `Form: ${f.formType} | Date: ${f.filedAt}`).join("\n") || "No filings found.";
+  try {
+    // Integration with StockFit /api/filings endpoint
+    const res = await fetch(`https://api.stockfit.io/api/filings?symbol=${ticker}`, {
+      headers: { "Authorization": `Bearer ${apiKey}` }
+    });
+    if (!res.ok) return `StockFit Error: ${res.status}`;
+    const data: any = await res.json();
+    return data?.results?.slice(0, 3).map((f: any) => `Form: ${f.form_type} | Filed: ${f.filed_at}`).join("\n") || "No filings found.";
+  } catch (e) {
+    return "StockFit API connection error.";
+  }
 }
 
 async function fetchScholarData(keywords: string, apiKey: string) {
@@ -198,7 +188,7 @@ async function fetchScholarData(keywords: string, apiKey: string) {
     headers: { "x-api-key": apiKey }
   });
   const data: any = await res.json();
-  return data?.data?.map((p: any) => `Title: ${p.title}\nTLDR: ${p.tldr?.text || "N/A"}`).join("\n\n") || "No research papers.";
+  return data?.data?.map((p: any) => `Title: ${p.title}\nTLDR: ${p.tldr?.text || "N/A"}`).join("\n\n") || "No research.";
 }
 
 async function fetchNewsData(companyName: string, newsKeywords: string, apiKey: string) {
@@ -209,7 +199,7 @@ async function fetchNewsData(companyName: string, newsKeywords: string, apiKey: 
     body: JSON.stringify({ query: `${companyName} ${newsKeywords}`, limit: 5 })
   });
   const data: any = await res.json();
-  return data?.data?.map((r: any) => `Source: ${r.url}\nContent: ${r.markdown?.substring(0, 400)}`).join("\n---\n") || "No news found.";
+  return data?.data?.map((r: any) => `Source: ${r.url}\nContent: ${r.markdown?.substring(0, 400)}`).join("\n---\n") || "No news.";
 }
 
 function json(data: unknown, status = 200): Response {
