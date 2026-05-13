@@ -10,12 +10,18 @@ export default {
       return handleAnalyze(request, env);
     }
 
-    // Route: serve frontend assets
-    if (env.ASSETS) {
-      return env.ASSETS.fetch(request);
-    }
+    // Route: serve frontend assets with SPA fallback
+if (env.ASSETS) {
+  const assetResponse = await env.ASSETS.fetch(request);
+  if (assetResponse.status === 404) {
+    // Rewrite to index.html so React Router handles the path
+    const indexUrl = new URL("/index.html", request.url);
+    return env.ASSETS.fetch(new Request(indexUrl.toString(), request));
+  }
+  return assetResponse;
+}
 
-    return new Response("Not found", { status: 404 });
+return new Response("Not found", { status: 404 });
   },
 };
 
