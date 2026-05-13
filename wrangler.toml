@@ -1,7 +1,6 @@
 name = "primitive-ontology"
 main = "server.ts"
 compatibility_date = "2026-05-12"
-# ADD THIS LINE:
 compatibility_flags = [ "nodejs_compat" ]
 
 workers_dev = false
