@@ -37,9 +37,17 @@ async function handleAnalyze(request: Request, env: any, ctx: any): Promise<Resp
   }
 
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
-  const ai = new GoogleGenAI(env.GEMINI_API_KEY);
+  // HARDENED: Use object config for the constructor
+  const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
 
-  ctx.waitUntil(processData({ ticker, row_id, supabase, ai, env, experimental_mode: !!experimental_mode }));
+  ctx.waitUntil(processData({ 
+    ticker, 
+    row_id, 
+    supabase, 
+    ai, 
+    env, 
+    experimental_mode: Boolean(experimental_mode) 
+  }));
 
   return json({ status: "processing" }, 202);
 }
@@ -55,42 +63,50 @@ async function processData({
   experimental_mode: boolean;
 }): Promise<void> {
   try {
-    // 1. Update status to scanning
+    // Update status to scanning and sync the experimental_mode flag
     await supabase.from("watchlist").update({ 
       status: "scanning", 
-      last_updated: new Date().toISOString() 
+      last_updated: new Date().toISOString(),
+      experimental_mode
     }).eq("id", row_id);
 
-    // 2. Fetch Keywords (Gemini 2.5)
-    const kwModel = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
-    const kwResult = await kwModel.generateContent({
+    const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    // Step 1: Keywords
+    const kwResult = await model.generateContent({
       contents: [{ role: "user", parts: [{ text: `Ticker: ${ticker}. Return JSON: companyName, researchKeywords, newsKeywords.` }] }],
       generationConfig: { responseMimeType: "application/json" },
     });
     const keywords = JSON.parse(kwResult.response.text.replace(/`{3}json|`{3}/g, "").trim());
 
-    // 3. Parallel Data Fetching
-    const [sec, res, news] = await Promise.allSettled([
+    // Step 2: Data Fetching
+    const [secData, scholarData, newsData] = await Promise.allSettled([
       fetchSECData(ticker, env.SEC_API_KEY),
       fetchScholarData(keywords.researchKeywords, env.SEMANTIC_SCHOLAR_API_KEY),
       fetchNewsData(keywords.companyName, keywords.newsKeywords, env.FIRECRAWL_API_KEY),
     ]);
 
-    const bundle = `SEC: ${sec.status==='fulfilled'?sec.value:'N/A'}\nResearch: ${res.status==='fulfilled'?res.value:'N/A'}\nNews: ${news.status==='fulfilled'?news.value:'N/A'}`;
+    const bundle = `
+SEC: ${secData.status === "fulfilled" ? secData.value : "Unavailable"}
+Research: ${scholarData.status === "fulfilled" ? scholarData.value : "Unavailable"}
+News: ${newsData.status === "fulfilled" ? newsData.value : "Unavailable"}`.trim();
 
-    // 4. Final Analysis (Experimental Switch)
+    // Step 3: Synthesis
     const sentimentSchema = experimental_mode ? `"Bullish" | "Bearish"` : `"Bullish" | "Bearish" | "Neutral"`;
-    const experimentalModeInstruction = experimental_mode ? "STRICT: Return Bullish or Bearish only. NO NEUTRAL." : "";
+    const experimentalInstruction = experimental_mode 
+      ? `CRITICAL: EXPERIMENTAL MODE ENABLED. Return a binary verdict (Bullish or Bearish). Neutral is forbidden.`
+      : `Neutral is permitted if data is ambiguous.`;
 
-    const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const userPrompt = `Analyze ticker $${ticker}. ${experimentalInstruction}\n\n--- DATA BUNDLE ---\n${bundle}`;
+
     const analysisResult = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: `Analyze ${ticker}. ${experimentalModeInstruction}\n\n${bundle}\n\nReturn JSON with: sentiment (${sentimentSchema}), conviction_score, primary_catalyst, key_risks, time_horizon, reasoning, data_quality.` }] }],
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       generationConfig: { responseMimeType: "application/json" },
     });
 
     const analysis = JSON.parse(analysisResult.response.text.replace(/`{3}json|`{3}/g, "").trim());
 
-    // 5. Final Supabase Update
+    // Step 4: Final Persistence
     await supabase.from("watchlist").update({
       ...analysis,
       status: "updated",
@@ -99,16 +115,50 @@ async function processData({
     }).eq("id", row_id);
 
   } catch (error: any) {
-    console.error("Worker Failure:", error.message);
-    await supabase.from("watchlist").update({ status: "idle", reasoning: error.message }).eq("id", row_id);
+    console.error("Worker Execution Error:", error.message);
+    // Attempt to report error back to DB
+    await supabase.from("watchlist").update({ 
+      status: "idle", 
+      reasoning: `System Error: ${error.message}` 
+    }).eq("id", row_id);
   }
 }
 
-// Minimal Helper implementations
-async function fetchSECData(t: string, k: string) { return "SEC Data"; }
-async function fetchScholarData(kw: string, k: string) { return "Scholar Data"; }
-async function fetchNewsData(cn: string, nkw: string, k: string) { return "News Data"; }
+// RESTORED: Your specific fetchers
+async function fetchSECData(ticker: string, apiKey: string) {
+  const res = await fetch(`https://api.sec-api.io?token=${apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: { query_string: { query: `ticker:${ticker} AND formType:("8-K" OR "10-Q")` } },
+      from: "0", size: "3", sort: [{ filedAt: { order: "desc" } }]
+    })
+  });
+  const data: any = await res.json();
+  return data?.filings?.map((f: any) => `Form: ${f.formType} | Date: ${f.filedAt}`).join("\n") || "No filings.";
+}
 
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
+async function fetchScholarData(keywords: string, apiKey: string) {
+  const res = await fetch(`https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(keywords)}&fields=title,tldr&limit=5&year=2024-`, {
+    headers: { "x-api-key": apiKey }
+  });
+  const data: any = await res.json();
+  return data?.data?.map((p: any) => `Title: ${p.title}\nTLDR: ${p.tldr?.text || "N/A"}`).join("\n\n") || "No research.";
+}
+
+async function fetchNewsData(companyName: string, newsKeywords: string, apiKey: string) {
+  const res = await fetch("https://api.firecrawl.dev/v1/search", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ query: `${companyName} ${newsKeywords}`, limit: 5 })
+  });
+  const data: any = await res.json();
+  return data?.data?.map((r: any) => `Source: ${r.url}\nContent: ${r.markdown?.substring(0, 400)}`).join("\n---\n") || "No news.";
+}
+
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
