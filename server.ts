@@ -39,7 +39,7 @@ async function handleAnalyze(request: Request, env: any): Promise<Response> {
     return json({ error: "Missing required fields" }, 400);
   }
 
-  const supabase = createClient(env.VITE_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
   const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
 
   // Kick off background processing without blocking the response
