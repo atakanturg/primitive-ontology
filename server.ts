@@ -57,9 +57,9 @@ ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
       const resultText = await model.generateContent(prompt);
       const response = await resultText.response;
       
-      // FIXED REGEX LINE:
-const cleanedJson = response.text().replace(/```json|
-```/g, "").trim();
+```ts
+const cleanedJson = response.text().replace(/```json|```/g, "").trim();
+```
       const analysis = JSON.parse(cleanedJson);
 
       await supabase
