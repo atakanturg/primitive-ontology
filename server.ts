@@ -37,7 +37,6 @@ app.post("/api/analyze", async (req, res) => {
   const processData = async () => {
     try {
       if (supabase) {
-        // Update status to scanning
         await supabase
           .from("watchlist")
           .update({ status: "scanning", last_updated: new Date().toISOString() })
@@ -51,49 +50,108 @@ app.post("/api/analyze", async (req, res) => {
         fetchNewsData(ticker),
       ]);
 
+      const secText    = secData.status     === 'fulfilled' ? secData.value     : 'Unavailable';
+      const scholarText = scholarData.status === 'fulfilled' ? scholarData.value : 'Unavailable';
+      const newsText   = newsData.status    === 'fulfilled' ? newsData.value    : 'Unavailable';
+
       const bundle = `
-      SEC Data: ${secData.status === 'fulfilled' ? secData.value : 'Unavailable'}
-      Academic Data: ${scholarData.status === 'fulfilled' ? scholarData.value : 'Unavailable'}
-      News Data: ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}
-      `;
+=== SEC / REGULATORY FILINGS ===
+${secText}
+
+=== ACADEMIC & TECHNICAL RESEARCH ===
+${scholarText}
+
+=== REAL-TIME NEWS & PRESS RELEASES ===
+${newsText}
+      `.trim();
 
       // 3. The Reasoning Pass (Gemini)
-      const prompt = `You are an elite quantitative analyst. Below is a bundle of regulatory filings, academic research, and real-time news for $${ticker}.
-      
-      Data Bundle:
-      ${bundle}
-      
-      Strict Task: Identify exactly one high-impact causal link between this data and the stock's outlook. Avoid generic market noise.
-      
-      Constraint: Return ONLY a JSON object: { "sentiment": "Bullish" | "Bearish" | "Neutral", "reasoning": "One concise, blunt sentence starting with a verb." }`;
+      // CHANGED: Expanded from a 2-field schema to a rich 7-field structured schema.
+      // The system prompt now instructs the model on source weighting, attribution,
+      // conviction scoring, risk surfacing, time-horizon framing, and data quality.
+      const systemPrompt = `You are an elite quantitative analyst with deep expertise in equity research, regulatory analysis, and academic literature review.
 
+Your job is to synthesize three distinct data sources — SEC/regulatory filings, academic research, and real-time news — into a single, high-signal investment thesis for a given stock ticker.
+
+Source weighting hierarchy (apply in this order):
+1. SEC filings & regulatory disclosures — highest weight; these are material, legally binding signals.
+2. Academic & technical research — medium weight; relevant for structural/innovation shifts.
+3. News & press releases — lowest weight; useful for timing, but prone to noise and recency bias.
+
+Your output must be a single JSON object. Do not include markdown, code fences, or any preamble. Return only raw JSON.`;
+
+      const userPrompt = `Analyze the following data bundle for ticker $${ticker} and return a structured investment signal.
+
+--- DATA BUNDLE ---
+${bundle}
+--- END BUNDLE ---
+
+Return ONLY a JSON object with exactly these fields:
+
+{
+  "sentiment": "Bullish" | "Bearish" | "Neutral",
+  "conviction_score": <integer 1–10, where 10 = highest conviction>,
+  "primary_catalyst": "<The single most impactful finding across all sources. Start with the source label, e.g. '[SEC]', '[Research]', or '[News]', followed by one blunt sentence.>",
+  "key_risks": "<The strongest counterargument or tail risk to your thesis. One sentence.>",
+  "time_horizon": "Short-term (0–3 months)" | "Medium-term (3–12 months)" | "Long-term (1+ years)",
+  "reasoning": "<A 2–3 sentence synthesis connecting the data sources to the sentiment. Be specific — cite figures, dates, or named events from the data bundle where available. Avoid generic statements.>",
+  "data_quality": "High" | "Medium" | "Low"
+}
+
+Rules:
+- conviction_score must reflect data completeness: if one or more sources were unavailable, cap at 6.
+- data_quality is "High" if all 3 sources had real data, "Medium" if 1–2 sources were missing or thin, "Low" if all sources were unavailable or mock.
+- Never fabricate figures. If data is absent, reflect that uncertainty in your reasoning.
+- sentiment must follow the weight hierarchy: a bearish SEC filing overrides a bullish news headline.`;
+
+      // Default fallback values
       let sentiment = "Neutral";
-      let reasoning = "Analysis failed due to lack of meaningful correlations.";
+      let conviction_score = 1;
+      let primary_catalyst = "Insufficient data to identify a primary catalyst.";
+      let key_risks = "Unable to assess risks due to lack of meaningful data.";
+      let time_horizon = "Medium-term (3–12 months)";
+      let reasoning = "Analysis could not be completed due to lack of meaningful correlations across data sources.";
+      let data_quality = "Low";
 
       if (process.env.GEMINI_API_KEY) {
         try {
           const response = await ai.models.generateContent({
             model: "gemini-1.5-flash",
-            contents: prompt,
+            contents: [
+              { role: "user", parts: [{ text: systemPrompt + "\n\n" + userPrompt }] }
+            ],
             config: {
               responseMimeType: "application/json",
             }
           });
           
           if (response.text) {
-            const result = JSON.parse(response.text);
-            sentiment = result.sentiment || sentiment;
-            reasoning = result.reasoning || reasoning;
+            // Strip any accidental markdown fences before parsing
+            const cleaned = response.text.replace(/```json|```/g, "").trim();
+            const result = JSON.parse(cleaned);
+
+            sentiment        = result.sentiment        || sentiment;
+            conviction_score = result.conviction_score || conviction_score;
+            primary_catalyst = result.primary_catalyst || primary_catalyst;
+            key_risks        = result.key_risks        || key_risks;
+            time_horizon     = result.time_horizon     || time_horizon;
+            reasoning        = result.reasoning        || reasoning;
+            data_quality     = result.data_quality     || data_quality;
           }
         } catch (e) {
           console.error("Gemini failed:", e);
         }
       }
 
-      // 4. The Database Write
+      // 4. The Database Write — now persists all 7 structured fields
       if (supabase) {
         let currentCount = 0;
-        const { data: existing } = await supabase.from("watchlist").select("analysis_count").eq("id", row_id).single();
+        const { data: existing } = await supabase
+          .from("watchlist")
+          .select("analysis_count")
+          .eq("id", row_id)
+          .single();
+
         if (existing && typeof existing.analysis_count === 'number') {
           currentCount = existing.analysis_count;
         }
@@ -101,12 +159,17 @@ app.post("/api/analyze", async (req, res) => {
         await supabase
           .from("watchlist")
           .update({
-            status: "updated",
+            status:           "updated",
             sentiment,
+            conviction_score,
+            primary_catalyst,
+            key_risks,
+            time_horizon,
             reasoning,
-            last_updated: new Date().toISOString(),
+            data_quality,
+            last_updated:     new Date().toISOString(),
             last_analyzed_at: new Date().toISOString(),
-            analysis_count: currentCount + 1
+            analysis_count:   currentCount + 1,
           })
           .eq("id", row_id);
       }
@@ -116,8 +179,8 @@ app.post("/api/analyze", async (req, res) => {
         await supabase
           .from("watchlist")
           .update({
-            status: "idle",
-            reasoning: "System error during analysis process.",
+            status:       "idle",
+            reasoning:    "System error during analysis process.",
             last_updated: new Date().toISOString(),
           })
           .eq("id", row_id);
@@ -128,7 +191,7 @@ app.post("/api/analyze", async (req, res) => {
   processData();
 });
 
-// Mock implementations for external APIs (to be replaced with actual implementations if/when required)
+// Mock implementations for external APIs
 async function fetchSECData(ticker: string): Promise<string> {
   const apiKey = process.env.SEC_API_KEY;
   if (!apiKey) return "Skipped SEC processing: SEC_API_KEY not configured. Mock: Management discusses supply chain.";
@@ -138,7 +201,7 @@ async function fetchSECData(ticker: string): Promise<string> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        query: { query_string: { query: `ticker:${ticker} AND formType:(\"8-K\" OR \"10-Q\")` } },
+        query: { query_string: { query: `ticker:${ticker} AND formType:("8-K" OR "10-Q")` } },
         from: "0",
         size: "1",
         sort: [{ filedAt: { order: "desc" } }]
@@ -168,7 +231,6 @@ async function fetchScholarData(ticker: string): Promise<string> {
       headers: { "x-api-key": apiKey }
     });
     
-    // Fallback to standard search if bulk fails
     if (!response.ok && response.status === 404) {
       const resFallback = await fetch(`https://api.semanticscholar.org/graph/v1/paper/search?query=${ticker} industry technical innovation breakthroughs&fields=title,abstract,tldr&limit=3&year=2024-`, {
         method: "GET",
@@ -185,7 +247,7 @@ async function fetchScholarData(ticker: string): Promise<string> {
     if (!response.ok) return "Scholar API Error.";
     const data = await response.json();
     if (data?.data && data.data.length > 0) {
-       return data.data.slice(0, 3).map((p: any) => `Title: ${p.title}\nTLDR: ${p.tldr?.text || "N/A"}\nAbstract: ${p.abstract?.substring(0, 200) || "N/A"}...`).join("\n\n");
+      return data.data.slice(0, 3).map((p: any) => `Title: ${p.title}\nTLDR: ${p.tldr?.text || "N/A"}\nAbstract: ${p.abstract?.substring(0, 200) || "N/A"}...`).join("\n\n");
     }
     return "No recent relevant papers found.";
   } catch (error) {
@@ -198,8 +260,6 @@ async function fetchNewsData(ticker: string): Promise<string> {
   const apiKey = process.env.FIRECRAWL_API_KEY;
   if (!apiKey) return "Skipped Firecrawl processing: FIRECRAWL_API_KEY not configured. Mock: Q3 indicates breakthrough.";
   
-  // Since investor relations routing can be highly complex to determine upfront, 
-  // we fallback to scraping Yahoo Finance news for the specific ticker as an example.
   const targetUrl = `https://finance.yahoo.com/quote/${ticker}/press-releases`;
   
   try {
@@ -218,7 +278,7 @@ async function fetchNewsData(ticker: string): Promise<string> {
     if (!response.ok) return "Firecrawl API Error.";
     const data = await response.json();
     if (data?.data?.markdown) {
-      return data.data.markdown.substring(0, 1500) + "..."; 
+      return data.data.markdown.substring(0, 1500) + "...";
     }
     return "No news data extracted from target URL.";
   } catch (error) {
