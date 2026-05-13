@@ -58,7 +58,7 @@ ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
       const response = await resultText.response;
       
       // FIXED REGEX LINE:
-      const cleanedJson = response.text().replace(/```json|
+const cleanedJson = response.text().replace(/```json|
 ```/g, "").trim();
       const analysis = JSON.parse(cleanedJson);
 
