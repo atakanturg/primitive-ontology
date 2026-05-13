@@ -294,11 +294,20 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: "spa",
     });
+    // Use Vite's middle-wares to handle SPAs in dev mode
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+    
+    // 1. Serve static assets (js, css, images) first
     app.use(express.static(distPath));
+
+    // 2. The Catch-all: For any GET request that isn't a file, serve index.html
     app.get("*", (req, res) => {
+      // Ensure we don't accidentally serve index.html for missing /api calls
+      if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: "API endpoint not found" });
+      }
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
@@ -307,5 +316,3 @@ async function startServer() {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
-
-startServer();
