@@ -260,15 +260,8 @@ export function Data() {
                       result.status === 'scanning' ? 'border-blue-200' : 'border-terra-border'
                     }`}
                   >
-                    {/* Experimental badge */}
-                    {result.experimental_mode && (
-                      <div className="absolute top-4 right-4 px-2 py-1 bg-amber-100 border border-amber-200 rounded-full">
-                        <span className="text-[9px] font-bold uppercase tracking-widest text-amber-700">Experimental</span>
-                      </div>
-                    )}
-
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6">
-                      <div className="flex items-center gap-4">
+                      <div className="flex flex-wrap items-center gap-4">
                         <span className="text-2xl font-mono tracking-widest font-bold">{result.ticker}</span>
                         <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                           result.sentiment === 'Bullish' ? 'bg-green-100 text-green-700' :
@@ -290,6 +283,13 @@ export function Data() {
                           </div>
                           <span className="text-[10px] uppercase tracking-wider font-bold text-terra-muted">{result.status}</span>
                         </div>
+                        
+                        {/* Experimental badge moved inline */}
+                        {result.experimental_mode && (
+                          <div className="px-2 py-1 bg-amber-100 border border-amber-200 rounded-full">
+                            <span className="text-[9px] font-bold uppercase tracking-widest text-amber-700">Experimental</span>
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex flex-col sm:items-end gap-2">
