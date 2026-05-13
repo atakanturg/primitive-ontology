@@ -92,22 +92,34 @@ ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
     // ── PASS 2: Ruthless Synthesis (Groq) ──
     const sentimentSchema = experimental_mode ? '"Bullish" | "Bearish"' : '"Bullish" | "Bearish" | "Neutral"';
     
-    const systemPrompt = `You are a ruthless, highly skeptical quantitative analyst. Source weighting: SEC (highest) > Academic (medium) > News (lowest). 
-    Do not polish turds. Call out corporate masking of financial distress. 
-    If debt is high or sales are falling, you must be critical.`;
+    const systemPrompt = `You are an elite, unshakeable hedge fund analyst. You value cold reality over corporate spin.
     
-    const experimentalClause = experimental_mode
-      ? `STRICT: Return only Bullish or Bearish. Neutral is forbidden. If the company is merely surviving via debt restructuring, default to Bearish.`
-      : `Neutral is allowed only if the evidence is perfectly balanced.`;
+    DECISION FRAMEWORK:
+    - BULLISH: Concrete evidence of revenue growth, margin expansion, or competitive moat (SEC data is primary).
+    - BEARISH: Concrete evidence of fundamental decay, cash burn, or liquidity crises.
+    - NEUTRAL: Routine operations, ambiguous data, or a lack of material catalysts.
+    
+    Source weighting: SEC (Legally binding) > Academic (Structural) > News (Sentiment).`;
 
-    const userPrompt = `Analyze ticker $${ticker}. ${experimentalClause}\n\nBUNDLE:\n${bundle}\n\nReturn ONLY a JSON object:
+    const experimentalClause = experimental_mode
+      ? `EXPERIMENTAL MODE ACTIVE: Return ONLY 'Bullish' or 'Bearish'. 'Neutral' is FORBIDDEN. 
+         Identify the subtle directional lean. If a company like BAC is stagnant but stable, look at the interest rate environment or recent 10-Q trends to pick the 'most likely' direction. Do not be lazy.`
+      : `STANDARD MODE: 'Neutral' is your default floor for routine data. Do not default to 'Bearish' simply because you lack 'Bullish' data. If the filings show routine business as usual with no red flags, you MUST return 'Neutral'.`;
+
+    const userPrompt = `Analyze ticker $${ticker}. ${experimentalClause}
+
+    --- DATA BUNDLE ---
+    ${bundle}
+    --- END BUNDLE ---
+
+    Return ONLY a JSON object:
     {
-      "sentiment": ${sentimentSchema},
+      "sentiment": ${experimental_mode ? '"Bullish" | "Bearish"' : '"Bullish" | "Bearish" | "Neutral"'},
       "conviction_score": <1-10>,
-      "primary_catalyst": "[SEC/Research/News] blunt one-sentence finding",
-      "key_risks": "one sentence tail risk",
+      "primary_catalyst": "[SEC/Research/News] One blunt sentence.",
+      "key_risks": "One sentence on the biggest threat.",
       "time_horizon": "Short/Medium/Long-term",
-      "reasoning": "2-3 ruthless sentences of synthesis",
+      "reasoning": "2-3 sentences. Be specific. If it's Neutral, explain why the signal is routine.",
       "data_quality": "High|Medium|Low"
     }`;
 
