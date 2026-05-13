@@ -63,16 +63,16 @@ async function processData({
       .update({ status: "scanning", last_updated: new Date().toISOString(), experimental_mode })
       .eq("id", row_id);
 
-    // ── PASS 1: Keyword Generation (DeepSeek) ──
-    const kwPrompt = `Given the stock ticker symbol "${ticker}", return a JSON object:
+    // ── PASS 1: Keyword Generation (Groq) ──
+    const kwPrompt = `Given the stock ticker symbol "${ticker}", return a JSON object with exactly these fields:
     {
-      "companyName": "Full Name",
-      "researchKeywords": "5-7 academic terms for Semantic Scholar",
-      "newsKeywords": "2-3 high-impact news topics"
+      "companyName": "<full legal company name>",
+      "researchKeywords": "<5-7 comma-separated academic terms>",
+      "newsKeywords": "<2-3 specific price-moving topics>"
     }
     Return ONLY raw JSON.`;
 
-    const keywords = await askDeepSeek(kwPrompt, env.DEEPSEEK_API_KEY, true);
+    const keywords = await askGroq(kwPrompt, env.GROQ_API_KEY, true);
 
     // ── Data Ingestion ──
     const [secData, scholarData, newsData] = await Promise.allSettled([
@@ -89,27 +89,29 @@ ${scholarData.status === 'fulfilled' ? scholarData.value : 'Unavailable'}
 === NEWS ===
 ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
 
-    // ── PASS 2: Ruthless Synthesis (DeepSeek) ──
+    // ── PASS 2: Ruthless Synthesis (Groq) ──
     const sentimentSchema = experimental_mode ? '"Bullish" | "Bearish"' : '"Bullish" | "Bearish" | "Neutral"';
     
-    const systemPrompt = `You are a ruthless, skeptical hedge fund analyst. Source weight: SEC > Research > News. Call out corporate jargon. Do not polish turds.`;
+    const systemPrompt = `You are a ruthless, highly skeptical quantitative analyst. Source weighting: SEC (highest) > Academic (medium) > News (lowest). 
+    Do not polish turds. Call out corporate masking of financial distress. 
+    If debt is high or sales are falling, you must be critical.`;
     
     const experimentalClause = experimental_mode
-      ? `STRICT: Return only Bullish or Bearish. If the company is failing or burning cash, you MUST return Bearish.`
-      : `Neutral is allowed only if data is perfectly balanced.`;
+      ? `STRICT: Return only Bullish or Bearish. Neutral is forbidden. If the company is merely surviving via debt restructuring, default to Bearish.`
+      : `Neutral is allowed only if the evidence is perfectly balanced.`;
 
     const userPrompt = `Analyze ticker $${ticker}. ${experimentalClause}\n\nBUNDLE:\n${bundle}\n\nReturn ONLY a JSON object:
     {
       "sentiment": ${sentimentSchema},
       "conviction_score": <1-10>,
-      "primary_catalyst": "[SEC/Research/News] blunt sentence",
-      "key_risks": "one sentence",
+      "primary_catalyst": "[SEC/Research/News] blunt one-sentence finding",
+      "key_risks": "one sentence tail risk",
       "time_horizon": "Short/Medium/Long-term",
-      "reasoning": "2-3 ruthless sentences",
+      "reasoning": "2-3 ruthless sentences of synthesis",
       "data_quality": "High|Medium|Low"
     }`;
 
-    const analysis = await askDeepSeek(userPrompt, env.DEEPSEEK_API_KEY, false, systemPrompt);
+    const analysis = await askGroq(userPrompt, env.GROQ_API_KEY, true, systemPrompt);
 
     // ── Persistence ──
     const { data: existing } = await supabase.from("watchlist").select("analysis_count").eq("id", row_id).single();
@@ -124,48 +126,51 @@ ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
     }).eq("id", row_id);
 
   } catch (error: any) {
-    console.error("DeepSeek Analysis Failure:", error.message);
+    console.error("Groq Analysis Failure:", error.message);
     await supabase.from("watchlist").update({
       status: "idle",
-      reasoning: `DeepSeek Error: ${error.message}`,
+      reasoning: `Intelligence Error: ${error.message}`,
       last_updated: new Date().toISOString(),
     }).eq("id", row_id);
   }
 }
 
-// ── DeepSeek API Helper ──────────────────────────────────────────────────────
+// ── Groq API Helper ─────────────────────────────────────────────────────────
 
-async function askDeepSeek(prompt: string, apiKey: string, isJson: boolean, systemMsg?: string) {
-  const response = await fetch("https://api.deepseek.com/chat/completions", {
+async function askGroq(prompt: string, apiKey: string, isJson: boolean, systemMsg?: string) {
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${apiKey}`
     },
     body: JSON.stringify({
-      model: "deepseek-chat", // V3 is the current flag-ship
+      model: "llama-3.3-70b-versatile",
       messages: [
         ...(systemMsg ? [{ role: "system", content: systemMsg }] : []),
         { role: "user", content: prompt }
       ],
       response_format: isJson ? { type: "json_object" } : undefined,
-      temperature: 0.3 // Keep it tight for financial data
+      temperature: 0.1, // Keep it highly deterministic for financial analysis
+      max_tokens: 1024
     })
   });
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`DeepSeek API error: ${response.status} - ${err}`);
+    throw new Error(`Groq API error: ${response.status} - ${err}`);
   }
 
   const data: any = await response.json();
   const content = data.choices[0].message.content;
+  
+  // Clean potential markdown fences before parsing
   return isJson ? JSON.parse(content.replace(/`{3}json|`{3}/g, "").trim()) : content;
 }
 
-// ... (Keep existing fetchSECData, fetchScholarData, fetchNewsData, and json helper)
+// ── External Data Fetchers (fetchSECData, fetchScholarData, fetchNewsData) ──
 
-async function fetchSECData(ticker: string, apiKey: string): Promise<string> {
+async function fetchSECData(ticker: string, apiKey: string) {
   if (!apiKey) return "Key missing.";
   const res = await fetch(`https://api.sec-api.io?token=${apiKey}`, {
     method: "POST",
@@ -179,7 +184,7 @@ async function fetchSECData(ticker: string, apiKey: string): Promise<string> {
   return data?.filings?.map((f: any) => `Form: ${f.formType} | Date: ${f.filedAt}`).join("\n") || "None.";
 }
 
-async function fetchScholarData(keywords: string, apiKey: string): Promise<string> {
+async function fetchScholarData(keywords: string, apiKey: string) {
   if (!apiKey) return "Key missing.";
   const res = await fetch(`https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(keywords)}&fields=title,tldr&limit=5&year=2024-`, {
     headers: { "x-api-key": apiKey }
@@ -188,7 +193,7 @@ async function fetchScholarData(keywords: string, apiKey: string): Promise<strin
   return data?.data?.map((p: any) => `Title: ${p.title}\nTLDR: ${p.tldr?.text || "N/A"}`).join("\n\n") || "None.";
 }
 
-async function fetchNewsData(companyName: string, newsKeywords: string, apiKey: string): Promise<string> {
+async function fetchNewsData(companyName: string, newsKeywords: string, apiKey: string) {
   if (!apiKey) return "Key missing.";
   const res = await fetch("https://api.firecrawl.dev/v1/search", {
     method: "POST",
