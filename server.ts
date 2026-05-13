@@ -181,50 +181,20 @@ async function askGroq(prompt: string, apiKey: string, isJson: boolean, systemMs
   return isJson ? JSON.parse(content.replace(/`{3}json|`{3}/g, "").trim()) : content;
 }
 
-async function fetchSECData(ticker: string, apiKey: string) {
-  if (!apiKey) return "Key missing.";
-  
-  const headers = { 
-    "x-api-key": apiKey, 
-    "Accept": "application/json"
-  };
+async function fetchSECData(ticker: string) {
+  // Use a static User-Agent representing you/Primitive-OS
+  const userAgent = "Primitive-OS Ontology Systems (atakan.turg@gmail.com)"; 
 
-  const tryFetch = async (url: string, label: string) => {
-    try {
-      const res = await fetch(url, { headers });
-      if (res.status === 403) return `[${label} Error: 403 Forbidden - Check Tier Permissions]`;
-      if (!res.ok) return `[${label} Error: ${res.status}]`;
-      return await res.json();
-    } catch (e) {
-      return `[${label} Connection Failed]`;
-    }
-  };
-
-  // Parallel fetch but with individual error handling
-  const [filingsData, ownershipData] = await Promise.all([
-    tryFetch(`https://api.stockfit.io/api/filings?symbol=${ticker}`, "Filings"),
-    tryFetch(`https://api.stockfit.io/api/ownership/transactions?symbol=${ticker}`, "Ownership")
-  ]);
-
-  let bundle = "";
-
-  // Process Filings
-  if (typeof filingsData === 'object' && filingsData.results) {
-    bundle += "=== RECENT FILINGS ===\n" + 
-      filingsData.results.slice(0, 3).map((f: any) => `Form: ${f.form_type} | Date: ${f.filed_at}`).join("\n");
-  } else {
-    bundle += `=== FILINGS DATA: ${filingsData} ===`;
+  try {
+    // 1. Get CIK mapping
+    const mappingRes = await fetch("https://www.sec.gov/files/company_tickers.json", {
+      headers: { "User-Agent": userAgent }
+    });
+    
+    // ... rest of the logic to parse and fetch CIK ...
+  } catch (e: any) {
+    return `SEC Direct Error: ${e.message}`;
   }
-
-  // Process Ownership
-  if (typeof ownershipData === 'object' && ownershipData.results) {
-    bundle += "\n\n=== INSIDER TRANSACTIONS ===\n" + 
-      ownershipData.results.slice(0, 3).map((t: any) => `${t.officer_name}: ${t.transaction_type} on ${t.date}`).join("\n");
-  } else {
-    bundle += `\n\n=== OWNERSHIP DATA: ${ownershipData} ===`;
-  }
-
-  return bundle;
 }
 
 async function fetchScholarData(keywords: string, apiKey: string) {
