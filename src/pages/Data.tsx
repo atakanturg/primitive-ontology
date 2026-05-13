@@ -103,7 +103,6 @@ export function Data() {
     e.stopPropagation();
     if (!supabase) return;
     const newValue = !current;
-    // Optimistic update
     setWatchlist(prev =>
       prev.map(item => item.id === id ? { ...item, experimental_mode: newValue } : item)
     );
@@ -144,7 +143,6 @@ export function Data() {
     <div className="flex flex-col px-4 mb-24 mt-12 md:mt-24 max-w-5xl mx-auto w-full gap-12 text-terra-ink">
       <div className="flex flex-col md:flex-row gap-12 items-start">
 
-        {/* Watchlist Section */}
         <div className="w-full md:w-1/3 flex flex-col">
           <div className="flex items-center gap-3 mb-6">
             <h3 className="text-xs font-bold tracking-[0.3em] text-terra-muted uppercase">Select Targets</h3>
@@ -156,7 +154,6 @@ export function Data() {
             ) : (
               watchlist.map(item => (
                 <div key={item.id} className="flex flex-col gap-1.5">
-                  {/* Ticker row */}
                   <div
                     onClick={() => toggleSelection(item.id)}
                     className={`flex items-center justify-between p-4 border rounded-xl cursor-pointer transition-all ${
@@ -185,7 +182,6 @@ export function Data() {
                     </div>
                   </div>
 
-                  {/* Experimental Mode Toggle — only visible when selected */}
                   <AnimatePresence>
                     {selectedIds.has(item.id) && (
                       <motion.div
@@ -193,22 +189,21 @@ export function Data() {
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
                         transition={{ duration: 0.2 }}
-                        className="overflow-hidden"
+                        className="overflow-visible" 
                       >
-                        <div className="flex items-center justify-between px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                        <div className="flex items-center justify-between px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl relative">
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">
                               Experimental
                             </span>
                             <div className="relative group">
                               <HelpCircle className="w-3 h-3 text-amber-500 cursor-help" />
-                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 px-3 py-2 bg-terra-ink text-white text-[10px] font-bold uppercase tracking-wider rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 text-center leading-relaxed">
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 px-3 py-2 bg-terra-ink text-white text-[10px] font-bold uppercase tracking-wider rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] text-center leading-relaxed whitespace-normal shadow-xl">
                                 HIGH RISK: Forces analysis to be either Bullish or Bearish, removing Neutral results.
                               </div>
                             </div>
                           </div>
 
-                          {/* Toggle switch */}
                           <button
                             onClick={(e) => toggleExperimentalMode(e, item.id, item.experimental_mode ?? false)}
                             className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none ${
@@ -239,7 +234,6 @@ export function Data() {
           </button>
         </div>
 
-        {/* Analysis Results Display */}
         <div className="w-full md:w-2/3">
           <h3 className="text-xs font-bold tracking-[0.3em] text-terra-muted uppercase mb-6">Intelligence Report</h3>
           
@@ -284,7 +278,6 @@ export function Data() {
                           <span className="text-[10px] uppercase tracking-wider font-bold text-terra-muted">{result.status}</span>
                         </div>
                         
-                        {/* Experimental badge moved inline */}
                         {result.experimental_mode && (
                           <div className="px-2 py-1 bg-amber-100 border border-amber-200 rounded-full">
                             <span className="text-[9px] font-bold uppercase tracking-widest text-amber-700">Experimental</span>
