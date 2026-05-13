@@ -235,7 +235,14 @@ async function askGroq(prompt: string, apiKey: string, isJson: boolean, systemMs
     })
   });
   const data: any = await response.json();
-  const content = data.choices[0].message.content;
+  // Replace: const content = data.choices[0].message.content;
+// With this bulletproof version:
+
+const content = data?.choices?.[0]?.message?.content;
+
+if (!content) {
+  throw new Error(`AI Gateway Failure: The model returned an empty response for ${ticker}. This often happens due to content filtering or malformed data bundles.`);
+}
   return isJson ? JSON.parse(content.replace(/`{3}json|`{3}/g, "").trim()) : content;
 }
 
