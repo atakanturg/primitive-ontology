@@ -115,7 +115,7 @@ export function Home() {
           className="w-full bg-white/70 backdrop-blur-xl border border-terra-border rounded-[2rem] p-8 md:p-12 shadow-[0_20px_40px_-10px_rgba(0,0,0,0.05)] overflow-hidden relative"
         >
           {/* Subtle noise texture */}
-          <div className="absolute inset-0 opacity-[0.03] bg-[url('https://grainy-gradients.vercel.app/noise.svg')] pointer-events-none mix-blend-overlay"></div>
+          <div className="absolute inset-0 opacity-[0.03] bg-[url('/noise.svg')] pointer-events-none mix-blend-overlay"></div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12 relative z-10">
             
