@@ -130,7 +130,7 @@ Rules:
 - Sentiment must follow the source weight hierarchy (SEC > Research > News).`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash", // Using 1.5 Flash for speed/cost as per your core model info
+      model: "gemini-2.5-flash", 
       contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + userPrompt }] }],
       config: { responseMimeType: "application/json" },
     });
@@ -173,7 +173,7 @@ Rules:
 
 async function generateSearchKeywords(ticker: string, ai: any) {
   const response = await ai.models.generateContent({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.5-flash",
     contents: [{ role: "user", parts: [{ text: `Given ticker "${ticker}", return JSON with: companyName, researchKeywords (5-7 domain terms), newsKeywords (2-3 price-moving topics).` }] }],
     config: { responseMimeType: "application/json" },
   });
