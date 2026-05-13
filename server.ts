@@ -185,40 +185,46 @@ async function fetchSECData(ticker: string, apiKey: string) {
   if (!apiKey) return "Key missing.";
   
   const headers = { 
-    "x-api-key": apiKey, // Documentation specifies this exact header
+    "x-api-key": apiKey, 
     "Accept": "application/json"
   };
 
-  try {
-    // ── Fetch 1: Filings (8-K, 10-Q) ──
-    const filingsRes = await fetch(`https://api.stockfit.io/api/filings?symbol=${ticker}`, { headers });
-    
-    // ── Fetch 2: Insider Ownership/Transactions ──
-    // Documentation link suggests this endpoint for high-signal insider data
-    const ownershipRes = await fetch(`https://api.stockfit.io/api/ownership/transactions?symbol=${ticker}`, { headers });
-
-    let resultString = "";
-
-    if (filingsRes.ok) {
-      const filings = await filingsRes.json();
-      resultString += "=== RECENT FILINGS ===\n" + 
-        (filings.results?.slice(0, 3).map((f: any) => `Form: ${f.form_type} | Date: ${f.filed_at}`).join("\n") || "None found.");
-    } else {
-      resultString += `=== FILINGS ERROR: ${filingsRes.status} ===\n`;
+  const tryFetch = async (url: string, label: string) => {
+    try {
+      const res = await fetch(url, { headers });
+      if (res.status === 403) return `[${label} Error: 403 Forbidden - Check Tier Permissions]`;
+      if (!res.ok) return `[${label} Error: ${res.status}]`;
+      return await res.json();
+    } catch (e) {
+      return `[${label} Connection Failed]`;
     }
+  };
 
-    if (ownershipRes.ok) {
-      const ownership = await ownershipRes.json();
-      resultString += "\n\n=== INSIDER TRANSACTIONS ===\n" + 
-        (ownership.results?.slice(0, 5).map((t: any) => `${t.officer_name} (${t.title}): ${t.transaction_type} ${t.shares} shares on ${t.date}`).join("\n") || "No recent insider activity.");
-    } else {
-      resultString += `\n\n=== OWNERSHIP ERROR: ${ownershipRes.status} ===`;
-    }
+  // Parallel fetch but with individual error handling
+  const [filingsData, ownershipData] = await Promise.all([
+    tryFetch(`https://api.stockfit.io/api/filings?symbol=${ticker}`, "Filings"),
+    tryFetch(`https://api.stockfit.io/api/ownership/transactions?symbol=${ticker}`, "Ownership")
+  ]);
 
-    return resultString || "No data returned from StockFit.";
-  } catch (e: any) {
-    return `StockFit Connection Error: ${e.message}`;
+  let bundle = "";
+
+  // Process Filings
+  if (typeof filingsData === 'object' && filingsData.results) {
+    bundle += "=== RECENT FILINGS ===\n" + 
+      filingsData.results.slice(0, 3).map((f: any) => `Form: ${f.form_type} | Date: ${f.filed_at}`).join("\n");
+  } else {
+    bundle += `=== FILINGS DATA: ${filingsData} ===`;
   }
+
+  // Process Ownership
+  if (typeof ownershipData === 'object' && ownershipData.results) {
+    bundle += "\n\n=== INSIDER TRANSACTIONS ===\n" + 
+      ownershipData.results.slice(0, 3).map((t: any) => `${t.officer_name}: ${t.transaction_type} on ${t.date}`).join("\n");
+  } else {
+    bundle += `\n\n=== OWNERSHIP DATA: ${ownershipData} ===`;
+  }
+
+  return bundle;
 }
 
 async function fetchScholarData(keywords: string, apiKey: string) {
