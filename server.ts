@@ -183,32 +183,41 @@ async function askGroq(prompt: string, apiKey: string, isJson: boolean, systemMs
 
 async function fetchSECData(ticker: string, apiKey: string) {
   if (!apiKey) return "Key missing.";
+  
+  const headers = { 
+    "x-api-key": apiKey, // Documentation specifies this exact header
+    "Accept": "application/json"
+  };
+
   try {
-    // UPDATED: StockFit often uses x-api-key or query params. 
-    // We'll try the header first as it's more secure.
-    const res = await fetch(`https://api.stockfit.io/api/filings?symbol=${ticker}`, {
-      headers: { 
-        "x-api-key": apiKey, // Hardened header
-        "Accept": "application/json"
-      }
-    });
-
-    if (res.status === 403) return "SEC Data: 403 Forbidden (Check API Key permissions or header type).";
-    if (!res.ok) return `SEC Data Error: ${res.status}`;
-
-    const data: any = await res.json();
+    // ── Fetch 1: Filings (8-K, 10-Q) ──
+    const filingsRes = await fetch(`https://api.stockfit.io/api/filings?symbol=${ticker}`, { headers });
     
-    // Check if results exist and have length
-    if (!data?.results || data.results.length === 0) {
-      return "No recent SEC filings found for this ticker.";
+    // ── Fetch 2: Insider Ownership/Transactions ──
+    // Documentation link suggests this endpoint for high-signal insider data
+    const ownershipRes = await fetch(`https://api.stockfit.io/api/ownership/transactions?symbol=${ticker}`, { headers });
+
+    let resultString = "";
+
+    if (filingsRes.ok) {
+      const filings = await filingsRes.json();
+      resultString += "=== RECENT FILINGS ===\n" + 
+        (filings.results?.slice(0, 3).map((f: any) => `Form: ${f.form_type} | Date: ${f.filed_at}`).join("\n") || "None found.");
+    } else {
+      resultString += `=== FILINGS ERROR: ${filingsRes.status} ===\n`;
     }
 
-    return data.results
-      .slice(0, 3)
-      .map((f: any) => `Form: ${f.form_type} | Filed: ${f.filed_at}`)
-      .join("\n");
+    if (ownershipRes.ok) {
+      const ownership = await ownershipRes.json();
+      resultString += "\n\n=== INSIDER TRANSACTIONS ===\n" + 
+        (ownership.results?.slice(0, 5).map((t: any) => `${t.officer_name} (${t.title}): ${t.transaction_type} ${t.shares} shares on ${t.date}`).join("\n") || "No recent insider activity.");
+    } else {
+      resultString += `\n\n=== OWNERSHIP ERROR: ${ownershipRes.status} ===`;
+    }
+
+    return resultString || "No data returned from StockFit.";
   } catch (e: any) {
-    return `SEC Connection Error: ${e.message}`;
+    return `StockFit Connection Error: ${e.message}`;
   }
 }
 
