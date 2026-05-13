@@ -2,30 +2,29 @@ import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 
 export default {
-  async fetch(request: Request, env: any): Promise<Response> {
+  async fetch(request: Request, env: any, ctx: any): Promise<Response> {
     const url = new URL(request.url);
 
     // Route: POST /api/analyze
     if (request.method === "POST" && url.pathname === "/api/analyze") {
-      return handleAnalyze(request, env);
+      return handleAnalyze(request, env, ctx);
     }
 
     // Route: serve frontend assets with SPA fallback
-if (env.ASSETS) {
-  const assetResponse = await env.ASSETS.fetch(request);
-  if (assetResponse.status === 404) {
-    // Rewrite to index.html so React Router handles the path
-    const indexUrl = new URL("/index.html", request.url);
-    return env.ASSETS.fetch(new Request(indexUrl.toString(), request));
-  }
-  return assetResponse;
-}
+    if (env.ASSETS) {
+      const assetResponse = await env.ASSETS.fetch(request);
+      if (assetResponse.status === 404) {
+        const indexUrl = new URL("/index.html", request.url);
+        return env.ASSETS.fetch(new Request(indexUrl.toString(), request));
+      }
+      return assetResponse;
+    }
 
-return new Response("Not found", { status: 404 });
+    return new Response("Not found", { status: 404 });
   },
 };
 
-async function handleAnalyze(request: Request, env: any): Promise<Response> {
+async function handleAnalyze(request: Request, env: any, ctx: any): Promise<Response> {
   let body: any;
   try {
     body = await request.json();
@@ -42,8 +41,9 @@ async function handleAnalyze(request: Request, env: any): Promise<Response> {
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
   const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
 
-  // Kick off background processing without blocking the response
-  processData({ ticker, row_id, supabase, ai, env }).catch(console.error);
+  // ctx.waitUntil keeps the Worker alive until processData finishes
+  // even after the 202 response is sent back to the client
+  ctx.waitUntil(processData({ ticker, row_id, supabase, ai, env }));
 
   return json({ status: "processing" }, 202);
 }
@@ -119,6 +119,8 @@ Rules:
     });
 
     const rawText = response.text ?? "";
+    console.log("Gemini raw response:", rawText);
+
     const cleanedJson = rawText.replace(/`{3}json|`{3}/g, "").trim();
     const analysis = JSON.parse(cleanedJson);
 
@@ -131,7 +133,7 @@ Rules:
     const currentCount =
       typeof existing?.analysis_count === "number" ? existing.analysis_count : 0;
 
-    await supabase
+    const { error: updateError } = await supabase
       .from("watchlist")
       .update({
         ...analysis,
@@ -142,13 +144,21 @@ Rules:
       })
       .eq("id", row_id);
 
-  } catch (error) {
-    console.error("Analysis background failure:", error);
+    if (updateError) {
+      console.error("Supabase update error:", updateError.message);
+    } else {
+      console.log("Successfully updated watchlist for", ticker);
+    }
+
+  } catch (error: any) {
+    console.error("Analysis background failure:", error?.message || error);
+    console.error("Stack:", error?.stack);
+
     await supabase
       .from("watchlist")
       .update({
         status: "idle",
-        reasoning: "System error during analysis process.",
+        reasoning: `Error: ${error?.message || "Unknown error"}`,
         last_updated: new Date().toISOString(),
       })
       .eq("id", row_id);
