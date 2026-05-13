@@ -2,13 +2,10 @@ name = "primitive-ontology"
 main = "server.ts"
 compatibility_date = "2026-05-12"
 compatibility_flags = [ "nodejs_compat" ]
-
 [env.production]
 route = "ontology.primitive-os.cc/*"
-
 [assets]
 directory = "./dist"
 binding = "ASSETS"
-
 [vars]
 NODE_ENV = "production"
