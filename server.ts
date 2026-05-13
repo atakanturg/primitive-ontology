@@ -63,27 +63,33 @@ async function processData({
       .update({ status: "scanning", last_updated: new Date().toISOString(), experimental_mode })
       .eq("id", row_id);
 
-    // ── PASS 1: Keyword Generation ──
+    // ── PASS 1: Technical Keyword Generation ──
     const kwPrompt = `Ticker: "${ticker}". Provide a raw JSON object for equity research:
     {
       "companyName": "Legal Entity Name",
-      "researchKeywords": "5-7 technical/domain terms",
+      "researchKeywords": "5-7 technical/domain terms (no company name)",
       "newsKeywords": "2-3 material price-moving topics"
     }`;
 
     const keywords = await askGroq(kwPrompt, env.GROQ_API_KEY, true);
 
-    // ── Parallel Data Ingestion ──
-    const [secData, scholarData, newsData] = await Promise.allSettled([
+    // ── Parallel Data Ingestion (SEC, Scholar, News, Senate) ──
+    const [secData, scholarData, newsData, senateData] = await Promise.allSettled([
       fetchSECData(ticker), 
       fetchScholarData(keywords.researchKeywords, env.SEMANTIC_SCHOLAR_API_KEY),
       fetchNewsData(keywords.companyName, keywords.newsKeywords, env.FIRECRAWL_API_KEY),
+      fetchSenateTrades(ticker, env.AINVEST_API_KEY)
     ]);
 
-    const secString = secData.status === 'fulfilled' ? (secData.value || "No data") : 'Unavailable';
+    const secString = secData.status === 'fulfilled' ? (secData.value || "No SEC data") : 'SEC Unavailable';
+    const senateString = senateData.status === 'fulfilled' ? (senateData.value || "No Senate activity") : 'Senate Data Unavailable';
+
     const bundle = `
-=== SEC FILINGS ===
+=== SEC FILINGS (Direct Govt Source) ===
 ${secString}
+
+=== SENATE & POLITICIAN ACTIVITY (Ainvest) ===
+${senateString}
 
 === ACADEMIC/TECHNICAL RESEARCH ===
 ${scholarData.status === 'fulfilled' ? scholarData.value : 'Unavailable'}
@@ -91,35 +97,37 @@ ${scholarData.status === 'fulfilled' ? scholarData.value : 'Unavailable'}
 === MARKET NEWS & SENTIMENT ===
 ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
 
-    // ── PASS 2: Ruthless Quant Synthesis ──
+    // ── PASS 2: Ruthless Informed-Capital Synthesis ──
     const sentimentSchema = experimental_mode ? '"Bullish" | "Bearish"' : '"Bullish" | "Bearish" | "Neutral"';
     
-    const systemPrompt = `You are a Tier-1 Hedge Fund Strategy Lead. You are paid to find reasons why a stock will FAIL. 
-
-    STRICT ANALYSIS PROTOCOLS:
-    1. SKEPTICISM FIRST: If a company rebrands or changes its name, assume it is "lipstick on a pig" unless the SEC filings show a corresponding 20%+ reduction in OpEx or a 15%+ increase in Gross Margin.
-    2. SOURCE HIERARCHY: SEC Filings are GOSPEL. Market news is NOISE. Academic research is STRUCTURAL.
-    3. THE BEARISH RULE: If a company in a declining category but claims a pivot, you MUST see the cash flow statement proof before flipping Bullish.
-    4. NO HALLUCINATIONS: If the SEC bundle shows "No material filings," you are FORBIDDEN from claiming the company has a "strong financial position." You must state that the financials are opaque.`;
+    const systemPrompt = `You are a Tier-1 Hedge Fund Strategy Lead. You detect "Informed Capital" flows.
+    
+    HIERARCHY OF TRUTH:
+    1. SENATE TRADES: If a politician with committee oversight buys/sells, treat this as a PRIORITY 1 signal.
+    2. SEC FILINGS: The hard baseline for fiscal health. 
+    3. RESEARCH/NEWS: Structural context and short-term noise.
+    
+    ANALYSIS PROTOCOL:
+    - SKEPTICISM: Corporate pivots or rebrands (e.g., dropping 'Meat' from a name) are ignored unless supported by SEC Gross Margin expansion or Senate buying.
+    - CITATIONS: You MUST cite specific Form types, Politician names, or Research papers from the bundle.
+    - NO HALLUCINATIONS: If data is missing or errored, you must state the financials are opaque and lower conviction.`;
     
     const experimentalClause = experimental_mode
-      ? `EXPERIMENTAL MODE: Forced binary output. Pick the delta. Even if small, choose Bullish or Bearish based on the most credible leading indicator.`
-      : `STANDARD MODE: Provide a nuanced, cited analysis.`;
+      ? `EXPERIMENTAL MODE: Forced binary output. Even on weak signals, you must commit to Bullish or Bearish based on the most credible leading indicator.`
+      : `STANDARD MODE: Provide a nuanced, highly cited analysis.`;
 
-    const userPrompt = `Perform a deep-dive analysis on ticker $${ticker}. ${experimentalClause}\n\nDATA BUNDLE:\n${bundle}\n\nReturn ONLY a JSON object:
+    const userPrompt = `Analyze ticker $${ticker}. ${experimentalClause}\n\nDATA BUNDLE:\n${bundle}\n\nReturn ONLY a JSON object:
     {
       "sentiment": ${sentimentSchema},
       "conviction_score": <1-10>,
-      "primary_catalyst": "One detailed sentence with a citation.",
-      "key_risks": "The most dangerous tail risk identified in the data.",
+      "primary_catalyst": "One detailed sentence citing specific SEC or Senate data.",
+      "key_risks": "The single most dangerous counter-thesis.",
       "time_horizon": "Short/Medium/Long-term",
-      "reasoning": "A high-nuance, multi-paragraph synthesis. You MUST cite specific filings, research papers, or news sources from the bundle. Connect the technical research to the financial outcomes.",
+      "reasoning": "2-3 paragraphs of ruthless synthesis. Connect Senate activity and SEC filings to the long-term technical research. Call out PR noise vs fiscal reality.",
       "data_quality": "High|Medium|Low"
     }`;
 
     const analysis = await askGroq(userPrompt, env.GROQ_API_KEY, true, systemPrompt);
-
-    // REMOVED: Manual conviction/quality caps that were forcing "Neutral" behavior
 
     const { data: existing } = await supabase.from("watchlist").select("analysis_count").eq("id", row_id).single();
     const currentCount = existing?.analysis_count || 0;
@@ -158,8 +166,8 @@ async function askGroq(prompt: string, apiKey: string, isJson: boolean, systemMs
         { role: "user", content: prompt }
       ],
       response_format: isJson ? { type: "json_object" } : undefined,
-      temperature: 0.15, // Slightly higher for better reasoning nuance
-      max_tokens: 2048 // Increased for detailed reasoning
+      temperature: 0.1,
+      max_tokens: 2048
     })
   });
 
@@ -168,8 +176,24 @@ async function askGroq(prompt: string, apiKey: string, isJson: boolean, systemMs
   return isJson ? JSON.parse(content.replace(/`{3}json|`{3}/g, "").trim()) : content;
 }
 
+async function fetchSenateTrades(ticker: string, apiKey: string) {
+  if (!apiKey) return "Senate: API Key missing.";
+  try {
+    const res = await fetch(`https://api.ainvest.com/market/senate-trades?symbol=${ticker}`, {
+      headers: { "x-api-key": apiKey }
+    });
+    if (!res.ok) return `Senate Data Error: ${res.status}`;
+    const data: any = await res.json();
+    return data?.items?.slice(0, 5).map((t: any) => 
+      `Politician: ${t.name} | Office: ${t.office} | Action: ${t.transaction_type} | Amount: ${t.amount_range} on ${t.date}`
+    ).join("\n") || "No recent Senate trades detected.";
+  } catch (e) {
+    return "Senate Data Fetch Failed.";
+  }
+}
+
 async function fetchSECData(ticker: string) {
-  const userAgent = "Primitive-OS Quant Research (atakan.turg@gmail.com)"; 
+  const userAgent = "Primitive-OS Research Project (atakan.turg@gmail.com)"; 
   try {
     const mappingRes = await fetch("https://www.sec.gov/files/company_tickers.json", {
       headers: { "User-Agent": userAgent }
@@ -187,7 +211,7 @@ async function fetchSECData(ticker: string) {
     const filtered = [];
     for (let i = 0; i < recent.form.length && filtered.length < 5; i++) {
       if (["10-K", "10-Q", "8-K"].includes(recent.form[i])) {
-        filtered.push(`[Source: SEC Form ${recent.form[i]} filed ${recent.filingDate[i]}]`);
+        filtered.push(`Form: ${recent.form[i]} | Date: ${recent.filingDate[i]}`);
       }
     }
     return filtered.join("\n");
@@ -198,11 +222,11 @@ async function fetchSECData(ticker: string) {
 
 async function fetchScholarData(keywords: string, apiKey: string) {
   if (!apiKey) return "Scholar: Key missing.";
-  const res = await fetch(`https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(keywords)}&fields=title,tldr,authors,year&limit=5&year=2023-`, {
+  const res = await fetch(`https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(keywords)}&fields=title,tldr,year&limit=5&year=2024-`, {
     headers: { "x-api-key": apiKey }
   });
   const data: any = await res.json();
-  return data?.data?.map((p: any) => `[Source: Research Paper "${p.title}" (${p.year})] TLDR: ${p.tldr?.text || "N/A"}`).join("\n\n");
+  return data?.data?.map((p: any) => `Paper: "${p.title}" (${p.year}) | TLDR: ${p.tldr?.text || "N/A"}`).join("\n\n");
 }
 
 async function fetchNewsData(companyName: string, newsKeywords: string, apiKey: string) {
@@ -213,7 +237,7 @@ async function fetchNewsData(companyName: string, newsKeywords: string, apiKey: 
     body: JSON.stringify({ query: `${companyName} ${newsKeywords}`, limit: 5 })
   });
   const data: any = await res.json();
-  return data?.data?.map((r: any) => `[Source: Market News ${r.url}] Content: ${r.markdown?.substring(0, 500)}`).join("\n---\n");
+  return data?.data?.map((r: any) => `Source: ${r.url}\nContent: ${r.markdown?.substring(0, 400)}`).join("\n---\n");
 }
 
 function json(data: unknown, status = 200): Response {
