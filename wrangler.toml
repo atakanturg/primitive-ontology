@@ -1,6 +1,12 @@
 name = "primitive-ontology"
-compatibility_date = "2024-03-20"
+main = "server.ts" # Ensure this points to your entry file
+compatibility_date = "2026-05-12"
 workers_dev = false
+
+# This tells Cloudflare to route all traffic to your script
+[env.production]
+route = "ontology.primitive-os.cc/*"
 
 [assets]
 directory = "./dist"
+binding = "ASSETS" # This is critical for the server to serve the frontend
