@@ -63,17 +63,17 @@ async function processData({
       .update({ status: "scanning", last_updated: new Date().toISOString(), experimental_mode })
       .eq("id", row_id);
 
-    // ── PASS 1: Technical Keyword Generation ──
+    // ── PASS 1: Keyword Generation (Groq) ──
     const kwPrompt = `Ticker: "${ticker}". Provide a raw JSON object for equity research:
     {
       "companyName": "Legal Entity Name",
-      "researchKeywords": "5-7 technical/domain terms (no company name)",
+      "researchKeywords": "5-7 technical/domain terms",
       "newsKeywords": "2-3 material price-moving topics"
     }`;
 
     const keywords = await askGroq(kwPrompt, env.GROQ_API_KEY, true);
 
-    // ── Parallel Data Ingestion (SEC, Scholar, News, Senate) ──
+    // ── Parallel Data Ingestion (SEC, Scholar, News, Ainvest Congress) ──
     const [secData, scholarData, newsData, senateData] = await Promise.allSettled([
       fetchSECData(ticker), 
       fetchScholarData(keywords.researchKeywords, env.SEMANTIC_SCHOLAR_API_KEY),
@@ -81,14 +81,14 @@ async function processData({
       fetchSenateTrades(ticker, env.AINVEST_API_KEY)
     ]);
 
-    const secString = secData.status === 'fulfilled' ? (secData.value || "No SEC data") : 'SEC Unavailable';
-    const senateString = senateData.status === 'fulfilled' ? (senateData.value || "No Senate activity") : 'Senate Data Unavailable';
+    const secString = secData.status === 'fulfilled' ? secData.value : 'SEC Unavailable';
+    const senateString = senateData.status === 'fulfilled' ? senateData.value : 'Congressional Data Unavailable';
 
     const bundle = `
 === SEC FILINGS (Direct Govt Source) ===
 ${secString}
 
-=== SENATE & POLITICIAN ACTIVITY (Ainvest) ===
+=== CONGRESSIONAL TRADES (STOCK Act Disclosures) ===
 ${senateString}
 
 === ACADEMIC/TECHNICAL RESEARCH ===
@@ -103,41 +103,36 @@ ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
     const systemPrompt = `You are a Tier-1 Hedge Fund Strategy Lead. You detect "Informed Capital" flows.
     
     HIERARCHY OF TRUTH:
-    1. SENATE TRADES: If a politician with committee oversight buys/sells, treat this as a PRIORITY 1 signal.
-    2. SEC FILINGS: The hard baseline for fiscal health. 
+    1. CONGRESSIONAL TRADES: Politicians often have non-public insights into regulatory shifts. Treat STOCK Act disclosures (Form 278-T) as Priority 1.
+    2. SEC FILINGS: The hard baseline for fiscal health.
     3. RESEARCH/NEWS: Structural context and short-term noise.
     
     ANALYSIS PROTOCOL:
-    - SKEPTICISM: Corporate pivots or rebrands (e.g., dropping 'Meat' from a name) are ignored unless supported by SEC Gross Margin expansion or Senate buying.
+    - SKEPTICISM: Ignore corporate rebrands or PR news unless supported by SEC Margin expansion or Congressional buying.
     - CITATIONS: You MUST cite specific Form types, Politician names, or Research papers from the bundle.
-    - NO HALLUCINATIONS: If data is missing or errored, you must state the financials are opaque and lower conviction.`;
+    - REPORTING GAPS: If a politician filed significantly late (e.g., >45 days), treat it as a red flag.`;
     
-    const experimentalClause = experimental_mode
-      ? `EXPERIMENTAL MODE: Forced binary output. Even on weak signals, you must commit to Bullish or Bearish based on the most credible leading indicator.`
-      : `STANDARD MODE: Provide a nuanced, highly cited analysis.`;
-
-    const userPrompt = `Analyze ticker $${ticker}. ${experimentalClause}\n\nDATA BUNDLE:\n${bundle}\n\nReturn ONLY a JSON object:
+    const userPrompt = `Analyze ticker $${ticker}. ${experimental_mode ? 'EXPERIMENTAL: No Neutral.' : ''}\n\nDATA BUNDLE:\n${bundle}\n\nReturn ONLY a JSON object:
     {
       "sentiment": ${sentimentSchema},
       "conviction_score": <1-10>,
-      "primary_catalyst": "One detailed sentence citing specific SEC or Senate data.",
+      "primary_catalyst": "One detailed sentence citing SEC or Congressional trade data.",
       "key_risks": "The single most dangerous counter-thesis.",
       "time_horizon": "Short/Medium/Long-term",
-      "reasoning": "2-3 paragraphs of ruthless synthesis. Connect Senate activity and SEC filings to the long-term technical research. Call out PR noise vs fiscal reality.",
-      "data_quality": "High|Medium|Low"
+      "reasoning": "2-3 paragraphs of ruthless synthesis. Cite specific trade dates, sizes, and names. Connect politician activity and SEC filings to technical research.",
+      "data_quality": "High|Medium|Low",
+      "political_sentiment": "Bullish" | "Bearish" | "Neutral"
     }`;
 
     const analysis = await askGroq(userPrompt, env.GROQ_API_KEY, true, systemPrompt);
 
-    const { data: existing } = await supabase.from("watchlist").select("analysis_count").eq("id", row_id).single();
-    const currentCount = existing?.analysis_count || 0;
-
     await supabase.from("watchlist").update({
       ...analysis,
+      political_signal_data: senateData.status === 'fulfilled' ? senateData.value : null,
       status: "updated",
       last_updated: new Date().toISOString(),
       last_analyzed_at: new Date().toISOString(),
-      analysis_count: currentCount + 1,
+      analysis_count: (await supabase.from("watchlist").select("analysis_count").eq("id", row_id).single()).data?.analysis_count + 1,
     }).eq("id", row_id);
 
   } catch (error: any) {
@@ -150,50 +145,37 @@ ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
   }
 }
 
-// ── Helpers ──
-
-async function askGroq(prompt: string, apiKey: string, isJson: boolean, systemMsg?: string) {
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        ...(systemMsg ? [{ role: "system", content: systemMsg }] : []),
-        { role: "user", content: prompt }
-      ],
-      response_format: isJson ? { type: "json_object" } : undefined,
-      temperature: 0.1,
-      max_tokens: 2048
-    })
-  });
-
-  const data: any = await response.json();
-  const content = data.choices[0].message.content;
-  return isJson ? JSON.parse(content.replace(/`{3}json|`{3}/g, "").trim()) : content;
-}
-
+// ── Corrected Ainvest API Implementation (OpenAPI 3.1.0) ──
 async function fetchSenateTrades(ticker: string, apiKey: string) {
   if (!apiKey) return "Senate: API Key missing.";
   try {
-    const res = await fetch(`https://api.ainvest.com/market/senate-trades?symbol=${ticker}`, {
-      headers: { "x-api-key": apiKey }
+    // Official endpoint: /ownership/congress
+    const url = `https://openapi.ainvest.com/open/ownership/congress?ticker=${ticker.toUpperCase()}&size=5`;
+    
+    const res = await fetch(url, {
+      headers: { 
+        "Authorization": `Bearer ${apiKey}`, // Bearer Auth required
+        "Accept": "application/json"
+      }
     });
+
     if (!res.ok) return `Senate Data Error: ${res.status}`;
-    const data: any = await res.json();
-    return data?.items?.slice(0, 5).map((t: any) => 
-      `Politician: ${t.name} | Office: ${t.office} | Action: ${t.transaction_type} | Amount: ${t.amount_range} on ${t.date}`
-    ).join("\n") || "No recent Senate trades detected.";
+    const json: any = await res.json();
+    
+    // Per schema: data is nested in data.data
+    const trades = json?.data?.data;
+    if (!trades || trades.length === 0) return "No recent Congressional trades found.";
+
+    return trades.map((t: any) => 
+      `${t.name} (${t.party}-${t.state}): ${t.trade_type.toUpperCase()} ${t.size} on ${t.trade_date} (Filed: ${t.filing_date}, Gap: ${t.reporting_gap})`
+    ).join("\n");
   } catch (e) {
     return "Senate Data Fetch Failed.";
   }
 }
 
 async function fetchSECData(ticker: string) {
-  const userAgent = "Primitive-OS Research Project (atakan.turg@gmail.com)"; 
+  const userAgent = "Primitive-OS Research Engine (atakan.turg@gmail.com)"; 
   try {
     const mappingRes = await fetch("https://www.sec.gov/files/company_tickers.json", {
       headers: { "User-Agent": userAgent }
@@ -238,6 +220,23 @@ async function fetchNewsData(companyName: string, newsKeywords: string, apiKey: 
   });
   const data: any = await res.json();
   return data?.data?.map((r: any) => `Source: ${r.url}\nContent: ${r.markdown?.substring(0, 400)}`).join("\n---\n");
+}
+
+async function askGroq(prompt: string, apiKey: string, isJson: boolean, systemMsg?: string) {
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      messages: [...(systemMsg ? [{ role: "system", content: systemMsg }] : []), { role: "user", content: prompt }],
+      response_format: isJson ? { type: "json_object" } : undefined,
+      temperature: 0.1,
+      max_tokens: 2048
+    })
+  });
+  const data: any = await response.json();
+  const content = data.choices[0].message.content;
+  return isJson ? JSON.parse(content.replace(/`{3}json|`{3}/g, "").trim()) : content;
 }
 
 function json(data: unknown, status = 200): Response {
