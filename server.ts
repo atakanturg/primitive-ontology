@@ -5,12 +5,10 @@ export default {
   async fetch(request: Request, env: any, ctx: any): Promise<Response> {
     const url = new URL(request.url);
 
-    // Route: POST /api/analyze
     if (request.method === "POST" && url.pathname === "/api/analyze") {
       return handleAnalyze(request, env, ctx);
     }
 
-    // Route: serve frontend assets with SPA fallback
     if (env.ASSETS) {
       const assetResponse = await env.ASSETS.fetch(request);
       if (assetResponse.status === 404) {
@@ -32,7 +30,6 @@ async function handleAnalyze(request: Request, env: any, ctx: any): Promise<Resp
     return json({ error: "Invalid JSON body" }, 400);
   }
 
-  // Extract experimental_mode from the body sent by Data.tsx
   const { ticker, user_id, row_id, experimental_mode } = body;
 
   if (!ticker || !user_id || !row_id) {
@@ -42,7 +39,6 @@ async function handleAnalyze(request: Request, env: any, ctx: any): Promise<Resp
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
   const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
 
-  // Pass experimental_mode into the background process
   ctx.waitUntil(processData({ ticker, row_id, supabase, ai, env, experimental_mode: !!experimental_mode }));
 
   return json({ status: "processing" }, 202);
@@ -64,16 +60,91 @@ async function processData({
       .update({ 
         status: "scanning", 
         last_updated: new Date().toISOString(),
-        experimental_mode // Persist the mode used for this scan
+        experimental_mode 
       })
       .eq("id", row_id);
 
-    // ── Step 1: SEC fetch ──
-    const secDataPromise = fetchSECData(ticker, env.SEC_API_KEY);
-
-    // ── Step 2: Gemini Pass 1 — Keyword Generation ──
     const keywords = await generateSearchKeywords(ticker, ai);
 
+    const [secData, scholarData, newsData] = await Promise.allSettled([
+      fetchSECData(ticker, env.SEC_API_KEY),
+      fetchScholarData(keywords.researchKeywords, env.SEMANTIC_SCHOLAR_API_KEY),
+      fetchNewsData(keywords.companyName, keywords.newsKeywords, env.FIRECRAWL_API_KEY),
+    ]);
+
+    const bundle = `
+=== SEC / REGULATORY FILINGS ===
+${secData.status === "fulfilled" ? secData.value : "Unavailable"}
+
+=== ACADEMIC & TECHNICAL RESEARCH ===
+${scholarData.status === "fulfilled" ? scholarData.value : "Unavailable"}
+
+=== REAL-TIME NEWS & PRESS RELEASES ===
+${newsData.status === "fulfilled" ? newsData.value : "Unavailable"}`.trim();
+
+    const sentimentSchema = experimental_mode 
+      ? `"Bullish" | "Bearish"` 
+      : `"Bullish" | "Bearish" | "Neutral"`;
+
+    const experimentalInstruction = experimental_mode 
+      ? `CRITICAL: EXPERIMENTAL MODE ENABLED. Return a binary verdict (Bullish or Bearish). Neutral is forbidden.`
+      : `Neutral is permitted if data is ambiguous.`;
+
+    const systemPrompt = `You are an elite quantitative analyst...`;
+
+    const userPrompt = `Analyze ticker $${ticker}. ${experimentalInstruction}\n\n--- DATA BUNDLE ---\n${bundle}`;
+
+    const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" }); // REMEMBER: 2.5
+    
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + userPrompt }] }],
+      generationConfig: { responseMimeType: "application/json" },
+    });
+
+    // FIXED: result.response.text is a property string, not a function
+    const rawText = result.response.text; 
+    const cleanedJson = rawText.replace(/`{3}json|`{3}/g, "").trim();
+    const analysis = JSON.parse(cleanedJson);
+
+    const { data: existing } = await supabase
+      .from("watchlist")
+      .select("analysis_count")
+      .eq("id", row_id)
+      .single();
+
+    const currentCount = typeof existing?.analysis_count === "number" ? existing.analysis_count : 0;
+
+    await supabase
+      .from("watchlist")
+      .update({
+        ...analysis,
+        status: "updated",
+        last_updated: new Date().toISOString(),
+        last_analyzed_at: new Date().toISOString(),
+        analysis_count: currentCount + 1,
+      })
+      .eq("id", row_id);
+
+  } catch (error: any) {
+    console.error("Analysis failure:", error?.message);
+    await supabase.from("watchlist").update({
+      status: "idle",
+      reasoning: `Error: ${error?.message || "Unknown error"}`,
+      last_updated: new Date().toISOString(),
+    }).eq("id", row_id);
+  }
+}
+
+async function generateSearchKeywords(ticker: string, ai: any) {
+  const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" }); // 2.5
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: `Given ticker "${ticker}", return JSON with: companyName, researchKeywords, newsKeywords.` }] }],
+    generationConfig: { responseMimeType: "application/json" },
+  });
+  return JSON.parse(result.response.text.replace(/`{3}json|`{3}/g, "").trim());
+}
+
+// ... (keep helper functions fetchSECData, fetchScholarData, fetchNewsData, and json)
     // ── Step 3: Parallel Data Ingestion ──
     const [secData, scholarData, newsData] = await Promise.allSettled([
       secDataPromise,
