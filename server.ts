@@ -94,13 +94,13 @@ ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
     // ── PASS 2: Ruthless Quant Synthesis ──
     const sentimentSchema = experimental_mode ? '"Bullish" | "Bearish"' : '"Bullish" | "Bearish" | "Neutral"';
     
-    const systemPrompt = `You are a sophisticated, ruthless Quant Analyst. You synthesize complex data points across financial (SEC), structural (Academic), and behavioral (News) domains.
+    const systemPrompt = `You are a Tier-1 Hedge Fund Strategy Lead. You are paid to find reasons why a stock will FAIL. 
 
-    SYNTHESIS RULES:
-    1. NO LAZY NEUTRALS: Do not default to Neutral unless the data is perfectly contradictory. 
-    2. NUANCE: Evaluate the interaction between research and finance. Does academic technical debt explain the poor SEC filings? 
-    3. CITATIONS REQUIRED: Your reasoning MUST cite specific data points (e.g., "Per the 8-K filed on X..." or "Academic research on [Topic] suggests...").
-    4. WEIGHTING: SEC is your anchor, but Academic Research is your leading indicator for long-term moats, and News is your short-term sentiment proxy.`;
+    STRICT ANALYSIS PROTOCOLS:
+    1. SKEPTICISM FIRST: If a company rebrands or changes its name, assume it is "lipstick on a pig" unless the SEC filings show a corresponding 20%+ reduction in OpEx or a 15%+ increase in Gross Margin.
+    2. SOURCE HIERARCHY: SEC Filings are GOSPEL. Market news is NOISE. Academic research is STRUCTURAL.
+    3. THE BEARISH RULE: If a company in a declining category but claims a pivot, you MUST see the cash flow statement proof before flipping Bullish.
+    4. NO HALLUCINATIONS: If the SEC bundle shows "No material filings," you are FORBIDDEN from claiming the company has a "strong financial position." You must state that the financials are opaque.`;
     
     const experimentalClause = experimental_mode
       ? `EXPERIMENTAL MODE: Forced binary output. Pick the delta. Even if small, choose Bullish or Bearish based on the most credible leading indicator.`
