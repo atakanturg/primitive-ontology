@@ -1,3 +1,6 @@
 name = "primitive-ontology"
 compatibility_date = "2024-03-20"
 workers_dev = false
+
+[assets]
+directory = "./dist"
