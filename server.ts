@@ -63,20 +63,31 @@ async function processData({
       .update({ status: "scanning", last_updated: new Date().toISOString() })
       .eq("id", row_id);
 
+    // ── Step 1: SEC fetch (ticker is all it needs, kick off immediately) ──
+    const secDataPromise = fetchSECData(ticker, env.SEC_API_KEY);
+
+    // ── Step 2: Gemini Pass 1 — generate targeted keywords ──
+    const keywords = await generateSearchKeywords(ticker, ai);
+    console.log("Generated keywords for", ticker, ":", JSON.stringify(keywords));
+
+    // ── Step 3: Run all three fetches in parallel ──
     const [secData, scholarData, newsData] = await Promise.allSettled([
-      fetchSECData(ticker, env.SEC_API_KEY),
-      fetchScholarData(ticker, env.SEMANTIC_SCHOLAR_API_KEY),
-      fetchNewsData(ticker, env.FIRECRAWL_API_KEY),
+      secDataPromise,
+      fetchScholarData(keywords.researchKeywords, env.SEMANTIC_SCHOLAR_API_KEY),
+      fetchNewsData(keywords.companyName, keywords.newsKeywords, env.FIRECRAWL_API_KEY),
     ]);
 
     const bundle = `
-=== SEC FILINGS ===
+=== SEC / REGULATORY FILINGS ===
 ${secData.status === "fulfilled" ? secData.value : "Unavailable"}
-=== RESEARCH ===
+
+=== ACADEMIC & TECHNICAL RESEARCH ===
 ${scholarData.status === "fulfilled" ? scholarData.value : "Unavailable"}
-=== NEWS ===
+
+=== REAL-TIME NEWS & PRESS RELEASES ===
 ${newsData.status === "fulfilled" ? newsData.value : "Unavailable"}`.trim();
 
+    // ── Step 4: Gemini Pass 2 — full analysis ──
     const systemPrompt = `You are an elite quantitative analyst with deep expertise in equity research, regulatory analysis, and academic literature review.
 
 Your job is to synthesize three distinct data sources — SEC/regulatory filings, academic research, and real-time news — into a single, high-signal investment thesis for a given stock ticker.
@@ -102,15 +113,15 @@ Return ONLY a JSON object with exactly these fields:
   "primary_catalyst": "<The single most impactful finding. Start with '[SEC]', '[Research]', or '[News]', followed by one blunt sentence.>",
   "key_risks": "<The strongest counterargument or tail risk. One sentence.>",
   "time_horizon": "Short-term (0-3 months)" | "Medium-term (3-12 months)" | "Long-term (1+ years)",
-  "reasoning": "<2-3 sentence synthesis connecting data sources to the sentiment. Be specific.>",
+  "reasoning": "<2-3 sentence synthesis connecting data sources to the sentiment. Be specific. Cite figures, dates, or named events where available.>",
   "data_quality": "High" | "Medium" | "Low"
 }
 
 Rules:
 - conviction_score: cap at 6 if any source was unavailable.
 - data_quality: "High" if all 3 sources had real data, "Medium" if 1-2 missing, "Low" if all unavailable.
-- Never fabricate figures.
-- Sentiment must follow the source weight hierarchy.`;
+- Never fabricate figures. If data is absent, reflect that uncertainty in your reasoning.
+- Sentiment must follow the source weight hierarchy: a bearish SEC filing overrides a bullish news headline.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
@@ -119,7 +130,7 @@ Rules:
     });
 
     const rawText = response.text ?? "";
-    console.log("Gemini raw response:", rawText);
+    console.log("Gemini Pass 2 raw response:", rawText);
 
     const cleanedJson = rawText.replace(/`{3}json|`{3}/g, "").trim();
     const analysis = JSON.parse(cleanedJson);
@@ -165,6 +176,43 @@ Rules:
   }
 }
 
+// ── Gemini Pass 1: Keyword Generation ────────────────────────────────────────
+
+async function generateSearchKeywords(ticker: string, ai: any): Promise<{
+  companyName: string;
+  researchKeywords: string;
+  newsKeywords: string;
+}> {
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: [{
+      role: "user",
+      parts: [{
+        text: `Given the stock ticker symbol "${ticker}", return a JSON object with exactly these fields:
+{
+  "companyName": "<the full legal company name behind this ticker>",
+  "researchKeywords": "<5-7 comma-separated keywords optimized for academic paper search on Semantic Scholar. Focus on the company's core technology domain, key innovations, and industry-specific technical terms. Do NOT use the company name itself — use domain terms that researchers would use.>",
+  "newsKeywords": "<2-3 specific high-impact topics most likely to have material effect on this stock's price right now. Use the company name plus specific business events, regulatory topics, or macro factors relevant to this company.>"
+}
+
+Examples:
+- NVDA → researchKeywords: "GPU architecture, large language model training, CUDA parallel computing, AI accelerator chips, transformer inference optimization"
+- NFLX → researchKeywords: "video streaming compression algorithms, content recommendation systems, subscriber churn prediction, ad-supported streaming monetization"
+- AAPL → researchKeywords: "mobile processor design, augmented reality hardware, on-device machine learning, silicon photonics"
+
+Return only raw JSON. No markdown, no preamble.`
+      }]
+    }],
+    config: { responseMimeType: "application/json" },
+  });
+
+  const raw = response.text ?? "";
+  const cleaned = raw.replace(/`{3}json|`{3}/g, "").trim();
+  return JSON.parse(cleaned);
+}
+
+// ── External Data Fetchers ────────────────────────────────────────────────────
+
 async function fetchSECData(ticker: string, apiKey: string): Promise<string> {
   if (!apiKey) return "Skipped: SEC_API_KEY not configured.";
   try {
@@ -174,66 +222,77 @@ async function fetchSECData(ticker: string, apiKey: string): Promise<string> {
       body: JSON.stringify({
         query: { query_string: { query: `ticker:${ticker} AND formType:("8-K" OR "10-Q")` } },
         from: "0",
-        size: "1",
+        size: "3",
         sort: [{ filedAt: { order: "desc" } }],
       }),
     });
-    if (!response.ok) return "SEC API Error.";
+    if (!response.ok) return `SEC API Error: ${response.status}`;
     const data: any = await response.json();
     if (data?.filings?.length > 0) {
-      const f = data.filings[0];
-      return `Form: ${f.formType} on ${f.filedAt}. Desc: ${f.description || "N/A"}`;
+      return data.filings
+        .map((f: any) => `Form: ${f.formType} | Filed: ${f.filedAt} | Desc: ${f.description || "N/A"}`)
+        .join("\n");
     }
     return "No recent SEC filings found.";
-  } catch {
-    return "Error fetching SEC data.";
+  } catch (e: any) {
+    return `Error fetching SEC data: ${e?.message}`;
   }
 }
 
-async function fetchScholarData(ticker: string, apiKey: string): Promise<string> {
+async function fetchScholarData(researchKeywords: string, apiKey: string): Promise<string> {
   if (!apiKey) return "Skipped: SEMANTIC_SCHOLAR_API_KEY not configured.";
   try {
+    const encoded = encodeURIComponent(researchKeywords);
     const response = await fetch(
-      `https://api.semanticscholar.org/graph/v1/paper/search?query=${ticker} industry innovation&fields=title,abstract,tldr&limit=3&year=2024-`,
+      `https://api.semanticscholar.org/graph/v1/paper/search?query=${encoded}&fields=title,abstract,tldr&limit=5&year=2024-`,
       { headers: { "x-api-key": apiKey } }
     );
-    if (!response.ok) return "Scholar API Error.";
+    if (!response.ok) return `Scholar API Error: ${response.status}`;
     const data: any = await response.json();
     if (data?.data?.length > 0) {
       return data.data
-        .map((p: any) => `Title: ${p.title}\nTLDR: ${p.tldr?.text || "N/A"}`)
+        .map((p: any) =>
+          `Title: ${p.title}\nTLDR: ${p.tldr?.text || p.abstract?.substring(0, 300) || "N/A"}`
+        )
         .join("\n\n");
     }
-    return "No recent papers found.";
-  } catch {
-    return "Error fetching academic data.";
+    return "No relevant academic papers found.";
+  } catch (e: any) {
+    return `Error fetching academic data: ${e?.message}`;
   }
 }
 
-async function fetchNewsData(ticker: string, apiKey: string): Promise<string> {
+async function fetchNewsData(companyName: string, newsKeywords: string, apiKey: string): Promise<string> {
   if (!apiKey) return "Skipped: FIRECRAWL_API_KEY not configured.";
   try {
-    const response = await fetch("https://api.firecrawl.dev/v1/scrape", {
+    const response = await fetch("https://api.firecrawl.dev/v1/search", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        url: `https://finance.yahoo.com/quote/${ticker}/press-releases`,
-        formats: ["markdown"],
+        query: `${companyName} ${newsKeywords}`,
+        limit: 5,
+        scrapeOptions: { formats: ["markdown"] },
       }),
     });
-    if (!response.ok) return "Firecrawl API Error.";
+    if (!response.ok) return `Firecrawl API Error: ${response.status}`;
     const data: any = await response.json();
-    if (data?.data?.markdown) {
-      return data.data.markdown.substring(0, 1500) + "...";
+    if (data?.data?.length > 0) {
+      return data.data
+        .map((r: any) =>
+          `Source: ${r.url}\n${r.markdown?.substring(0, 600) || "No content extracted"}`
+        )
+        .join("\n\n---\n\n");
     }
-    return "No news data extracted.";
-  } catch {
-    return "Error fetching news data.";
+    return "No news data found.";
+  } catch (e: any) {
+    return `Error fetching news data: ${e?.message}`;
   }
 }
+
+// ── Utility ───────────────────────────────────────────────────────────────────
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
