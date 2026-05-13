@@ -62,7 +62,6 @@ async function processData({
   experimental_mode: boolean;
 }): Promise<void> {
   try {
-    // 1. Initialize AI correctly for the NEW SDK inside the execution context
     const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
 
     await supabase
@@ -70,14 +69,9 @@ async function processData({
       .update({ status: "scanning", last_updated: new Date().toISOString(), experimental_mode })
       .eq("id", row_id);
 
-    // ── Step 1: SEC fetch (kick off immediately) ──
     const secDataPromise = fetchSECData(ticker, env.SEC_API_KEY);
-
-    // ── Step 2: Gemini Pass 1 — generate targeted keywords ──
     const keywords = await generateSearchKeywords(ticker, ai);
-    console.log("Generated keywords for", ticker, ":", JSON.stringify(keywords));
-
-    // ── Step 3: Run all three fetches in parallel ──
+    
     const [secData, scholarData, newsData] = await Promise.allSettled([
       secDataPromise,
       fetchScholarData(keywords.researchKeywords, env.SEMANTIC_SCHOLAR_API_KEY),
@@ -94,21 +88,21 @@ ${scholarData.status === "fulfilled" ? scholarData.value : "Unavailable"}
 === REAL-TIME NEWS & PRESS RELEASES ===
 ${newsData.status === "fulfilled" ? newsData.value : "Unavailable"}`.trim();
 
-    // ── Step 4: Gemini Pass 2 — Synthesis & Experimental Constraint ──
-    const systemPrompt = `You are an elite quantitative analyst with deep expertise in equity research, regulatory analysis, and academic literature review.
+    // ── THE FIX: Ruthless System Prompt ──
+    const systemPrompt = `You are a ruthless, highly skeptical quantitative analyst at an elite hedge fund. Your job is to synthesize SEC filings, academic research, and real-time news into a brutal, high-signal investment thesis.
 
-Your job is to synthesize three distinct data sources — SEC/regulatory filings, academic research, and real-time news — into a single, high-signal investment thesis for a given stock ticker.
-
-Source weighting hierarchy (apply in this order):
-1. SEC filings & regulatory disclosures — highest weight; these are material, legally binding signals.
-2. Academic & technical research — medium weight; relevant for structural/innovation shifts.
-3. News & press releases — lowest weight; useful for timing, but prone to noise and recency bias.
+CRITICAL BEHAVIORAL CONSTRAINTS:
+1. Default to skepticism. Do not be a cheerleader. Do not "polish a turd."
+2. Recognize corporate jargon: "Financial restructuring," "liquidity enhancement," and "strategic pivots" are often desperate masks for severe financial distress, cash burn, and failing business models. 
+3. If a company has massive debt, declining sales, or is fighting for survival, you MUST highlight this as an existential threat.
+4. Source weighting: SEC (legally binding reality) > Academic (structural trends) > News (noise).
 
 Your output must be a single JSON object. Do not include markdown, code fences, or any preamble. Return only raw JSON.`;
 
+    // ── THE FIX: Brutal Experimental Logic ──
     const experimentalClause = experimental_mode
-      ? `\n\nEXPERIMENTAL MODE ACTIVE: You MUST return either "Bullish" or "Bearish" for the sentiment field. Returning "Neutral" is strictly forbidden. Commit to the stronger directional signal even if the evidence is mixed. Lean on the highest-weighted source available to justify your position.`
-      : "";
+      ? `\n\nEXPERIMENTAL MODE ACTIVE: You MUST return either "Bullish" or "Bearish". "Neutral" is STRICTLY FORBIDDEN. CRITICAL: If the company is struggling, burning cash, or merely surviving via debt restructuring (e.g., struggling legacy companies or failing hyped stocks), you MUST choose "Bearish". Do not force a "Bullish" rating on a failing asset. Be brutal.`
+      : `\n\nSTANDARD MODE: You may return "Neutral", but ONLY if the data is perfectly balanced. If the data leans even slightly negative, or if the company is masking poor performance with corporate speak, return "Bearish".`;
 
     const userPrompt = `Analyze the following data bundle for ticker $${ticker} and return a structured investment signal.
 
@@ -124,15 +118,13 @@ Return ONLY a JSON object with exactly these fields:
   "primary_catalyst": "<The single most impactful finding. Start with '[SEC]', '[Research]', or '[News]', followed by one blunt sentence.>",
   "key_risks": "<The strongest counterargument or tail risk. One sentence.>",
   "time_horizon": "Short-term (0-3 months)" | "Medium-term (3-12 months)" | "Long-term (1+ years)",
-  "reasoning": "<2-3 sentence synthesis connecting data sources to the sentiment. Be specific. Cite figures, dates, or named events where available.>",
+  "reasoning": "<2-3 sentence ruthless synthesis. Call out the trash if it's trash. Cite specific figures or named events where available.>",
   "data_quality": "High" | "Medium" | "Low"
 }
 
 Rules:
 - conviction_score: cap at 6 if any source was unavailable.
-- data_quality: "High" if all 3 sources had real data, "Medium" if 1-2 missing, "Low" if all unavailable.
-- Never fabricate figures. If data is absent, reflect that uncertainty in your reasoning.
-- Sentiment must follow the source weight hierarchy: a bearish SEC filing overrides a bullish news headline.${experimentalClause}`;
+- Sentiment must follow the source weight hierarchy.${experimentalClause}`;
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
@@ -141,46 +133,27 @@ Rules:
     });
 
     const rawText = response.text ?? "";
-    console.log("Gemini Pass 2 raw response:", rawText);
-
     const cleanedJson = rawText.replace(/`{3}json|`{3}/g, "").trim();
     const analysis = JSON.parse(cleanedJson);
 
-    const { data: existing } = await supabase
-      .from("watchlist")
-      .select("analysis_count")
-      .eq("id", row_id)
-      .single();
-
+    const { data: existing } = await supabase.from("watchlist").select("analysis_count").eq("id", row_id).single();
     const currentCount = typeof existing?.analysis_count === "number" ? existing.analysis_count : 0;
 
-    const { error: updateError } = await supabase
-      .from("watchlist")
-      .update({
-        ...analysis,
-        status: "updated",
-        last_updated: new Date().toISOString(),
-        last_analyzed_at: new Date().toISOString(),
-        analysis_count: currentCount + 1,
-      })
-      .eq("id", row_id);
-
-    if (updateError) {
-      console.error("Supabase update error:", updateError.message);
-    } else {
-      console.log("Successfully updated watchlist for", ticker);
-    }
+    await supabase.from("watchlist").update({
+      ...analysis,
+      status: "updated",
+      last_updated: new Date().toISOString(),
+      last_analyzed_at: new Date().toISOString(),
+      analysis_count: currentCount + 1,
+    }).eq("id", row_id);
 
   } catch (error: any) {
     console.error("Analysis background failure:", error?.message || error);
-    await supabase
-      .from("watchlist")
-      .update({
-        status: "idle",
-        reasoning: `Error: ${error?.message || "Unknown error"}`,
-        last_updated: new Date().toISOString(),
-      })
-      .eq("id", row_id);
+    await supabase.from("watchlist").update({
+      status: "idle",
+      reasoning: `Error: ${error?.message || "Unknown error"}`,
+      last_updated: new Date().toISOString(),
+    }).eq("id", row_id);
   }
 }
 
