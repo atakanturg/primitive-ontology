@@ -80,9 +80,10 @@ async function processData({
       fetchNewsData(keywords.companyName, keywords.newsKeywords, env.FIRECRAWL_API_KEY),
     ]);
 
+    const secString = secData.status === 'fulfilled' ? secData.value : 'Unavailable';
     const bundle = `
 === SEC FILINGS (via StockFit) ===
-${secData.status === 'fulfilled' ? secData.value : 'Unavailable'}
+${secString}
 
 === TECHNICAL CONTEXT ===
 ${scholarData.status === 'fulfilled' ? scholarData.value : 'Unavailable'}
@@ -90,17 +91,22 @@ ${scholarData.status === 'fulfilled' ? scholarData.value : 'Unavailable'}
 === MATERIAL NEWS ===
 ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
 
-    // ── PASS 2: Ruthless Synthesis (Groq) ──
+    // ── PASS 2: Objective Synthesis (Groq) ──
     const sentimentSchema = experimental_mode ? '"Bullish" | "Bearish"' : '"Bullish" | "Bearish" | "Neutral"';
     
-    const systemPrompt = `You are a cold, objective quantitative analyst. Hierarchy: SEC > Research > News.
-    - BULLISH: Evidence of growth, de-leveraging, or moat.
-    - BEARISH: Evidence of decay, cash burn, or insolvency.
-    - NEUTRAL: Routine operations or business-as-usual.`;
+    const systemPrompt = `You are a cold, objective quantitative analyst. You have zero bias.
+
+    OBJECTIVE CLASSIFICATION RULES:
+    1. RECENCY OVERRIDE: Any event older than 3-6 months (e.g., past mergers, old product launches) is PRICED IN and must be treated as NEUTRAL noise, unless new SEC filings show unexpected financial fallout.
+    2. BULLISH: Requires NEW, concrete positive data (e.g., surprise margin expansion, active debt reduction).
+    3. BEARISH: Requires NEW, concrete negative data (e.g., rising cash burn, insolvency risk).
+    4. NEUTRAL: Default for routine operations, "priced-in" historical events, or lack of concrete data.
+    
+    Hierarchy: SEC (Verified Facts) > Research (Structural) > News (Sentiment). Do not hallucinate catalysts from old news.`;
     
     const experimentalClause = experimental_mode
-      ? `CRITICAL: Experimental Mode ON. FORBIDDEN to choose 'Neutral'. Analyze the smallest delta and pick a binary side.`
-      : `Neutral is the default baseline for routine data.`;
+      ? `CRITICAL: Experimental Mode ON. FORBIDDEN to choose 'Neutral'. Analyze the smallest recent delta in the data and pick a binary side. If data is completely empty, default to Bearish due to opacity.`
+      : `Neutral is the default baseline for routine data or empty data.`;
 
     const userPrompt = `Analyze ticker $${ticker}. ${experimentalClause}\n\nBUNDLE:\n${bundle}\n\nReturn ONLY a JSON object:
     {
@@ -109,11 +115,19 @@ ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
       "primary_catalyst": "[SEC/Research/News] Blunt sentence.",
       "key_risks": "Single most dangerous counter-thesis.",
       "time_horizon": "Short/Medium/Long-term",
-      "reasoning": "2-3 ruthless sentences of cold synthesis.",
-      "data_quality": "High|Medium|Low"
+      "reasoning": "2-3 ruthless sentences of cold synthesis. Call out if an event is priced in.",
+      "data_quality": "High|Medium|Low (Low if SEC data is missing)"
     }`;
 
     const analysis = await askGroq(userPrompt, env.GROQ_API_KEY, true, systemPrompt);
+
+    // Hardcode data_quality drop if StockFit missed
+    if (secString.includes("No filings found") || secString === "Unavailable") {
+        analysis.data_quality = "Low";
+        if (analysis.conviction_score > 4 && !experimental_mode) {
+            analysis.conviction_score = 4; // Cap conviction if blindly guessing on News alone
+        }
+    }
 
     const { data: existing } = await supabase.from("watchlist").select("analysis_count").eq("id", row_id).single();
     const currentCount = existing?.analysis_count || 0;
@@ -170,7 +184,6 @@ async function askGroq(prompt: string, apiKey: string, isJson: boolean, systemMs
 async function fetchSECData(ticker: string, apiKey: string) {
   if (!apiKey) return "Key missing.";
   try {
-    // Integration with StockFit /api/filings endpoint
     const res = await fetch(`https://api.stockfit.io/api/filings?symbol=${ticker}`, {
       headers: { "Authorization": `Bearer ${apiKey}` }
     });
