@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../lib/useAuth';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -16,6 +16,9 @@ export function Target() {
   const [submitted, setSubmitted] = useState(false);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [fetching, setFetching] = useState(true);
+
+  // Configuration: Point this to your Cloudflare Worker domain
+  const BACKEND_URL = "https://ontology.primitive-os.cc/api/analyze";
 
   const fetchWatchlist = async () => {
     if (!supabase || !user) return;
@@ -61,63 +64,47 @@ export function Target() {
     }
   }, [user]);
 
-  if (loading || fetching) {
-    return <div className="flex justify-center items-center h-64 text-terra-muted uppercase tracking-widest text-sm font-bold">Checking access...</div>;
-  }
-
-  // If Supabase is connected but no user is found, block access
-  if (isConnected && !user) {
-    return (
-      <div className="flex flex-col justify-center items-center h-[50vh] space-y-6">
-        <h2 className="text-xl font-sans font-bold tracking-[0.2em] uppercase text-terra-ink">Module Locked</h2>
-        <p className="text-sm font-medium text-terra-muted tracking-wide max-w-md text-center">
-          Authentication required. Please sign in via the Overview dashboard to insert target companies.
-        </p>
-      </div>
-    );
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ticker.trim()) return;
+    if (!ticker.trim() || !supabase || !user) return;
     
-    // Process input
     setSubmitted(true);
     
-    // Option to push to supabase table here if needed
-    if (supabase && user) {
-      const { data, error } = await supabase.from('watchlist').insert([{ 
-        ticker: ticker.toUpperCase(), 
-        user_id: user.id,
-        status: 'idle'
-      }]).select().single();
+    // 1. Insert into Supabase
+    const { data, error } = await supabase.from('watchlist').insert([{ 
+      ticker: ticker.toUpperCase(), 
+      user_id: user.id,
+      status: 'idle'
+    }]).select().single();
 
-      if (error) {
-        console.error('Error inserting target:', error);
-        if (error.code === '23505') {
-          // Unique constraint violation handled silently or gracefully
-          setTicker('');
-        }
-      } else if (data) {
-        // Trigger the signal-to-action orchestrator on the backend
-        try {
-          fetch('/api/analyze', {
-            method: 'POST',
-            headers: {
-               'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              ticker: data.ticker,
-              user_id: data.user_id,
-              row_id: data.id
-            })
-          });
-        } catch (err) {
-          console.error("Failed to trigger orchestrator:", err);
-        }
+    if (error) {
+      console.error('Error inserting target:', error);
+      setSubmitted(false);
+      return;
+    }
 
-        await fetchWatchlist();
+    if (data) {
+      // 2. Trigger the Signal-to-Action Orchestrator (Backend)
+      // We use the absolute BACKEND_URL to ensure it hits the Cloudflare Worker
+      try {
+        fetch(BACKEND_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ticker: data.ticker,
+            user_id: user.id,
+            row_id: data.id
+          })
+        });
+        // We do not await this fetch because the backend 
+        // sends a 202 and continues in the background.
+      } catch (err) {
+        console.error("Failed to trigger orchestrator:", err);
       }
+
+      await fetchWatchlist();
     }
 
     setTicker('');
@@ -129,6 +116,21 @@ export function Target() {
     await supabase.from('watchlist').delete().eq('id', id);
     await fetchWatchlist();
   };
+
+  if (loading || fetching) {
+    return <div className="flex justify-center items-center h-64 text-terra-muted uppercase tracking-widest text-sm font-bold">Checking access...</div>;
+  }
+
+  if (isConnected && !user) {
+    return (
+      <div className="flex flex-col justify-center items-center h-[50vh] space-y-6">
+        <h2 className="text-xl font-sans font-bold tracking-[0.2em] uppercase text-terra-ink">Module Locked</h2>
+        <p className="text-sm font-medium text-terra-muted tracking-wide max-w-md text-center">
+          Authentication required. Please sign in via the Overview dashboard to insert target companies.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center px-4 mb-24 mt-12 md:mt-24 space-y-16">
