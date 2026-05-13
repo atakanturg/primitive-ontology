@@ -1,0 +1,48 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Inter:wght@300;400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Cormorant Garamond", serif;
+  --font-serif: "Cormorant Garamond", serif;
+  
+  --color-terra-bg: #fdfdfd; /* Pure white/off-white */
+  --color-terra-surface: #f5f5f5; /* Subtle gray */
+  --color-terra-clay: #4a4a4a; /* Dark gray accent instead of clay */
+  --color-terra-sage: #e0e0e0; /* Light gray */
+  --color-terra-ink: #0a0a0a; /* Absolute black */
+  --color-terra-muted: #666666; /* Elegant mid-gray */
+  --color-terra-border: #eaeaea; /* Crisp border */
+}
+
+@layer base {
+  body {
+    @apply bg-terra-bg text-terra-ink font-sans selection:bg-terra-ink selection:text-white;
+    overflow-x: hidden;
+  }
+}
+
+.smooth-shadow {
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.08); /* Sophisticated deep shadow */
+}
+
+.natural-gradient {
+  background: linear-gradient(135deg, var(--color-terra-bg) 0%, var(--color-terra-surface) 100%);
+}
+
+::-webkit-scrollbar {
+  width: 4px; /* Thin, elegant scrollbar */
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-terra-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-terra-border);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-terra-ink);
+}
+
