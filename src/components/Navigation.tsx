@@ -6,7 +6,8 @@ import { useAuth } from '../lib/useAuth';
 import { supabase } from '../lib/supabase';
 
 export function Navigation() {
-  const [isOpen, setIsOpen] = useState(false);
+  // Expanded by default per instruction
+  const [isOpen, setIsOpen] = useState(true); 
   const location = useLocation();
   const { user } = useAuth();
   const [authLoading, setAuthLoading] = useState(false);
@@ -81,7 +82,6 @@ export function Navigation() {
         </AnimatePresence>
       </motion.nav>
 
-      {/* Auth Section placed to the right */}
       {supabase && (
         <div className="absolute right-4 md:right-8 hidden md:block z-10">
           {user ? (
