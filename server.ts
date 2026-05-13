@@ -184,14 +184,31 @@ async function askGroq(prompt: string, apiKey: string, isJson: boolean, systemMs
 async function fetchSECData(ticker: string, apiKey: string) {
   if (!apiKey) return "Key missing.";
   try {
+    // UPDATED: StockFit often uses x-api-key or query params. 
+    // We'll try the header first as it's more secure.
     const res = await fetch(`https://api.stockfit.io/api/filings?symbol=${ticker}`, {
-      headers: { "Authorization": `Bearer ${apiKey}` }
+      headers: { 
+        "x-api-key": apiKey, // Hardened header
+        "Accept": "application/json"
+      }
     });
-    if (!res.ok) return `StockFit Error: ${res.status}`;
+
+    if (res.status === 403) return "SEC Data: 403 Forbidden (Check API Key permissions or header type).";
+    if (!res.ok) return `SEC Data Error: ${res.status}`;
+
     const data: any = await res.json();
-    return data?.results?.slice(0, 3).map((f: any) => `Form: ${f.form_type} | Filed: ${f.filed_at}`).join("\n") || "No filings found.";
-  } catch (e) {
-    return "StockFit API connection error.";
+    
+    // Check if results exist and have length
+    if (!data?.results || data.results.length === 0) {
+      return "No recent SEC filings found for this ticker.";
+    }
+
+    return data.results
+      .slice(0, 3)
+      .map((f: any) => `Form: ${f.form_type} | Filed: ${f.filed_at}`)
+      .join("\n");
+  } catch (e: any) {
+    return `SEC Connection Error: ${e.message}`;
   }
 }
 
