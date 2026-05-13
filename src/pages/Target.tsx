@@ -140,7 +140,7 @@ export function Target() {
           animate={{ opacity: 1, y: 0 }}
           className="bg-white/70 backdrop-blur-xl border border-terra-border rounded-[2rem] p-8 md:p-12 shadow-[0_20px_40px_-10px_rgba(0,0,0,0.05)] text-center relative overflow-hidden"
         >
-          <div className="absolute inset-0 opacity-[0.03] bg-[url('https://grainy-gradients.vercel.app/noise.svg')] pointer-events-none mix-blend-overlay"></div>
+          <div className="absolute inset-0 opacity-[0.03] bg-[url('/noise.svg')] pointer-events-none mix-blend-overlay"></div>
           
           <h3 className="text-xs font-bold tracking-[0.3em] text-terra-muted uppercase mb-8">Establish New Target</h3>
           
