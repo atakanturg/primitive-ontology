@@ -75,14 +75,14 @@ async function processData({
 
     // ── Parallel Data Ingestion ──
     const [secData, scholarData, newsData] = await Promise.allSettled([
-      fetchSECData(ticker, env.STOCKFIT_API_KEY),
+      fetchSECData(ticker), // Switched to Direct SEC
       fetchScholarData(keywords.researchKeywords, env.SEMANTIC_SCHOLAR_API_KEY),
       fetchNewsData(keywords.companyName, keywords.newsKeywords, env.FIRECRAWL_API_KEY),
     ]);
 
-    const secString = secData.status === 'fulfilled' ? secData.value : 'Unavailable';
+    const secString = secData.status === 'fulfilled' ? (secData.value || "No data returned") : 'Unavailable';
     const bundle = `
-=== SEC FILINGS (via StockFit) ===
+=== SEC FILINGS (Direct Govt Source) ===
 ${secString}
 
 === TECHNICAL CONTEXT ===
@@ -97,15 +97,15 @@ ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
     const systemPrompt = `You are a cold, objective quantitative analyst. You have zero bias.
 
     OBJECTIVE CLASSIFICATION RULES:
-    1. RECENCY OVERRIDE: Any event older than 3-6 months (e.g., past mergers, old product launches) is PRICED IN and must be treated as NEUTRAL noise, unless new SEC filings show unexpected financial fallout.
+    1. RECENCY OVERRIDE: Any event older than 3-6 months (e.g., past mergers, old product launches) is PRICED IN and must be treated as NEUTRAL noise.
     2. BULLISH: Requires NEW, concrete positive data (e.g., surprise margin expansion, active debt reduction).
     3. BEARISH: Requires NEW, concrete negative data (e.g., rising cash burn, insolvency risk).
     4. NEUTRAL: Default for routine operations, "priced-in" historical events, or lack of concrete data.
     
-    Hierarchy: SEC (Verified Facts) > Research (Structural) > News (Sentiment). Do not hallucinate catalysts from old news.`;
+    Hierarchy: SEC (Verified Facts) > Research (Structural) > News (Sentiment).`;
     
     const experimentalClause = experimental_mode
-      ? `CRITICAL: Experimental Mode ON. FORBIDDEN to choose 'Neutral'. Analyze the smallest recent delta in the data and pick a binary side. If data is completely empty, default to Bearish due to opacity.`
+      ? `CRITICAL: Experimental Mode ON. FORBIDDEN to choose 'Neutral'. Analyze the smallest recent delta and pick a binary side. If data is completely empty, default to Bearish due to opacity.`
       : `Neutral is the default baseline for routine data or empty data.`;
 
     const userPrompt = `Analyze ticker $${ticker}. ${experimentalClause}\n\nBUNDLE:\n${bundle}\n\nReturn ONLY a JSON object:
@@ -116,16 +116,16 @@ ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
       "key_risks": "Single most dangerous counter-thesis.",
       "time_horizon": "Short/Medium/Long-term",
       "reasoning": "2-3 ruthless sentences of cold synthesis. Call out if an event is priced in.",
-      "data_quality": "High|Medium|Low (Low if SEC data is missing)"
+      "data_quality": "High|Medium|Low"
     }`;
 
     const analysis = await askGroq(userPrompt, env.GROQ_API_KEY, true, systemPrompt);
 
-    // Hardcode data_quality drop if StockFit missed
-    if (secString.includes("No filings found") || secString === "Unavailable") {
+    // FIX: Safe Navigation (!secString || ...) prevents the crash if secString is null/undefined
+    if (!secString || secString.includes("No filings found") || secString.includes("Error") || secString === "Unavailable") {
         analysis.data_quality = "Low";
         if (analysis.conviction_score > 4 && !experimental_mode) {
-            analysis.conviction_score = 4; // Cap conviction if blindly guessing on News alone
+            analysis.conviction_score = 4; 
         }
     }
 
@@ -182,16 +182,47 @@ async function askGroq(prompt: string, apiKey: string, isJson: boolean, systemMs
 }
 
 async function fetchSECData(ticker: string) {
-  // Use a static User-Agent representing you/Primitive-OS
-  const userAgent = "Primitive-OS Ontology Systems (atakan.turg@gmail.com)"; 
+  // Identify yourself to SEC as required by Fair Access policy
+  const userAgent = "Primitive-OS Research Engine (atakan.turg@gmail.com)"; 
 
   try {
-    // 1. Get CIK mapping
+    // 1. Get CIK mapping from SEC
     const mappingRes = await fetch("https://www.sec.gov/files/company_tickers.json", {
       headers: { "User-Agent": userAgent }
     });
-    
-    // ... rest of the logic to parse and fetch CIK ...
+    if (!mappingRes.ok) return "SEC Direct Error: Mapping unavailable.";
+
+    const mapping: any = await mappingRes.json();
+    const companyEntry = Object.values(mapping).find(
+      (c: any) => c.ticker === ticker.toUpperCase()
+    ) as any;
+
+    if (!companyEntry) return "SEC Direct Error: Ticker not in mapping.";
+
+    const cik = companyEntry.cik_str.toString().padStart(10, '0');
+
+    // 2. Fetch submissions for this CIK
+    const subRes = await fetch(`https://data.sec.gov/submissions/CIK${cik}.json`, {
+      headers: { "User-Agent": userAgent }
+    });
+    if (!subRes.ok) return `SEC Direct Error: ${subRes.status}`;
+
+    const subData: any = await subRes.json();
+    const recent = subData.filings?.recent;
+    if (!recent || !recent.form) return "SEC Direct Error: No filing history.";
+
+    // 3. Filter for material forms (10-K, 10-Q, 8-K)
+    const filtered = [];
+    for (let i = 0; i < recent.form.length && filtered.length < 3; i++) {
+      if (["10-K", "10-Q", "8-K"].includes(recent.form[i])) {
+        filtered.push(`Form: ${recent.form[i]} | Date: ${recent.filingDate[i]}`);
+      }
+    }
+
+    return filtered.length > 0 
+      ? `Recent filings found:\n${filtered.join("\n")}`
+      : "No material filings found recently.";
+
   } catch (e: any) {
     return `SEC Direct Error: ${e.message}`;
   }
