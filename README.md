@@ -4,7 +4,6 @@
 # Primitive Ontology
 
 [![Deployment Status](https://img.shields.io/website?url=https%3A%2F%2Fontology.primitive-os.cc)](https://ontology.primitive-os.cc)
-[Live Deployment](https://ontology.primitive-os.cc)
 
 Primitive Ontology is an automated alternative-data aggregation and quantitative intelligence platform. It systematically ingests, parses, and analyzes highly uncorrelated datasets to synthesize real-time, actionable market sentiment theses (Bullish / Bearish / Neutral) on equity tickers.
 
