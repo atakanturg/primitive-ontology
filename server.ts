@@ -8,6 +8,10 @@ export default {
       return handleAnalyze(request, env, ctx);
     }
 
+    if (request.method === "POST" && url.pathname === "/api/mailing-list") {
+      return handleMailingList(request, env);
+    }
+
     if (env.ASSETS) {
       const assetResponse = await env.ASSETS.fetch(request);
       if (assetResponse.status === 404) {
@@ -251,4 +255,63 @@ function json(data: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+async function handleMailingList(request: Request, env: any): Promise<Response> {
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON body" }, 400);
+  }
+
+  const { email } = body;
+  if (!email) return json({ error: "Email is required" }, 400);
+
+  const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN, GOOGLE_CONTACTS_GROUP_ID } = env;
+
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REFRESH_TOKEN || !GOOGLE_CONTACTS_GROUP_ID) {
+    return json({ error: "Google API configuration missing on server" }, 500);
+  }
+
+  try {
+    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        refresh_token: GOOGLE_REFRESH_TOKEN,
+        grant_type: "refresh_token",
+      }),
+    });
+
+    const tokenData: any = await tokenResponse.json();
+    if (!tokenData.access_token) {
+      throw new Error("Failed to refresh Google access token");
+    }
+
+    const createContactResponse = await fetch("https://people.googleapis.com/v1/people:createContact", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        emailAddresses: [{ value: email }],
+        memberships: [{ contactGroupMembership: { contactGroupResourceName: `contactGroups/${GOOGLE_CONTACTS_GROUP_ID}` } }],
+      }),
+    });
+
+    if (!createContactResponse.ok) {
+      const errorData = await createContactResponse.json();
+      // If contact already exists, we might want to just add to group, but createContact with membership is cleaner if new.
+      // For simplicity in this requirement, we assume we create a new entry or handle error.
+      throw new Error(`Google API error: ${JSON.stringify(errorData)}`);
+    }
+
+    return json({ success: true });
+  } catch (error: any) {
+    return json({ error: error.message }, 500);
+  }
 }

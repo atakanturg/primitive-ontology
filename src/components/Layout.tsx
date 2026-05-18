@@ -65,6 +65,8 @@ export default function Layout() {
     }
   };
 
+  const isHomePage = location.pathname === '/';
+
   return (
     <div className="flex flex-col h-[100dvh] overflow-hidden bg-transparent text-terra-ink font-sans selection:bg-terra-ink selection:text-white relative">
       <AnimatePresence>
@@ -89,13 +91,13 @@ export default function Layout() {
 
       <ScrollToTop />
       
-      {location.pathname === '/' && <GearScene />}
+      {isHomePage && <GearScene />}
       <div className="absolute inset-0 bg-white/70 backdrop-blur-[3px] z-[-1] pointer-events-none bg-[radial-gradient(#d1d5db_1px,transparent_1px)] [background-size:24px_24px]" />
 
       <div 
         id="main-scroll-container" 
         ref={scrollRef}
-        className="flex-grow overflow-y-auto overflow-x-hidden relative z-10 w-full flex flex-col"
+        className={`flex-grow ${isHomePage ? 'overflow-hidden' : 'overflow-y-auto'} overflow-x-hidden relative z-10 w-full flex flex-col`}
       >
         <div className="w-full flex-shrink-0 pt-6 flex flex-col items-center">
           {/* Top Text */}
@@ -113,7 +115,7 @@ export default function Layout() {
           </motion.div>
 
           {/* Continuous Planet with Logo Overlay, only on Home */}
-          {location.pathname === '/' && (
+          {isHomePage && (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -136,40 +138,28 @@ export default function Layout() {
           )}
         </div>
 
-        <main className={`relative z-10 flex-grow pt-8 ${location.pathname === '/' ? 'pt-0 md:-mt-10' : ''}`}>
+        <main className={`relative z-10 flex-grow pt-8 ${isHomePage ? 'pt-0 md:-mt-10' : ''}`}>
           <Outlet />
         </main>
 
-        <footer className="pt-24 pb-36 px-4 text-center relative z-10 border-t border-terra-border/50 bg-terra-bg/80 backdrop-blur-md">
-          <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6 text-[10px] font-bold uppercase tracking-[0.3em] text-terra-muted">
-            <div>Primitive OS © 2026</div>
-            <div className="flex gap-8">
-              <a href="#" className="hover:text-terra-ink transition-colors">Privacy</a>
-              <a href="#" className="hover:text-terra-ink transition-colors">Terms</a>
+        {!isHomePage && (
+          <footer className="pt-24 pb-36 px-4 text-center relative z-10 border-t border-terra-border/50 bg-terra-bg/80 backdrop-blur-md">
+            <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6 text-[10px] font-bold uppercase tracking-[0.3em] text-terra-muted">
+              <div>Primitive OS © 2026</div>
+              <div className="flex gap-8">
+                <a href="#" className="hover:text-terra-ink transition-colors">Privacy</a>
+                <a href="#" className="hover:text-terra-ink transition-colors">Terms</a>
+              </div>
+              <div>Status: Optimal</div>
             </div>
-            <div>Status: Optimal</div>
-          </div>
-        </footer>
+          </footer>
+        )}
       </div>
 
       <div className="flex-shrink-0 z-50">
         <Navigation />
       </div>
 
-      {/* Floating Scroll Arrow */}
-      <motion.button
-        onClick={scrollToPosition}
-        className="fixed bottom-36 right-8 z-50 w-12 h-12 bg-terra-ink text-white rounded-full flex items-center justify-center shadow-2xl hover:bg-white hover:text-terra-ink hover:border hover:border-terra-border transition-colors duration-300 group"
-        animate={{ y: [0, 10, 0] }}
-        transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-      >
-        <motion.div
-          animate={{ rotate: isAtBottom ? 180 : 0 }}
-          transition={{ duration: 0.5, ease: "easeInOut" }}
-        >
-          <ArrowDown className="w-5 h-5 stroke-[1.5]" />
-        </motion.div>
-      </motion.button>
     </div>
   );
 }
