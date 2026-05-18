@@ -18,8 +18,8 @@ Primitive Ontology is an automated alternative-data aggregation and quantitative
 
 ## System Architecture & Tech Stack
 
-- **Backend/Data Pipeline:**Node.js
-- **Database/Storage:** PostgreSQL
+- **Backend/Data Pipeline:** Node.js
+- **Database/Storage:** PostgreSQL (Supabase)
 - **Data Engineering:** Playwright
 - **Deployment:** Cloudflare
 
