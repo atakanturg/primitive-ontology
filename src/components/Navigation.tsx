@@ -1,16 +1,22 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, X, LogIn, LogOut } from 'lucide-react';
-import { useState } from 'react';
+import { Menu, X, LogIn, LogOut, Mail } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/useAuth';
 import { supabase } from '../lib/supabase';
 
 export function Navigation() {
-  // Expanded by default per instruction
   const [isOpen, setIsOpen] = useState(true); 
   const location = useLocation();
   const { user } = useAuth();
   const [authLoading, setAuthLoading] = useState(false);
+  const [subscribeLoading, setSubscribeLoading] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('isSubscribed') === 'true';
+    }
+    return false;
+  });
 
   const handleSignIn = async () => {
     if (!supabase) return;
@@ -29,6 +35,34 @@ export function Navigation() {
     setAuthLoading(true);
     await supabase.auth.signOut();
     setAuthLoading(false);
+  };
+
+  const handleSubscribe = async () => {
+    if (!user) {
+      alert("Please sign in to join the mailing list.");
+      return;
+    }
+
+    setSubscribeLoading(true);
+    try {
+      const response = await fetch('/api/mailing-list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email }),
+      });
+
+      if (response.ok) {
+        setIsSubscribed(true);
+        localStorage.setItem('isSubscribed', 'true');
+      } else {
+        const data = await response.json();
+        alert(`Error: ${data.error || 'Failed to subscribe'}`);
+      }
+    } catch (error) {
+      alert("An error occurred. Please try again later.");
+    } finally {
+      setSubscribeLoading(false);
+    }
   };
 
   const routes = [
@@ -83,7 +117,17 @@ export function Navigation() {
       </motion.nav>
 
       {supabase && (
-        <div className="absolute right-4 md:right-8 hidden md:block z-10">
+        <div className="absolute right-4 md:right-8 hidden md:flex items-center gap-3 z-10">
+          {!isSubscribed && (
+            <button 
+              onClick={handleSubscribe}
+              disabled={subscribeLoading}
+              className="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase text-terra-muted hover:text-terra-ink transition-colors px-4 py-2 bg-white/50 border border-terra-border rounded-full disabled:opacity-50"
+            >
+              <Mail className="w-3 h-3" />
+              {subscribeLoading ? '...' : 'Join Mailing List'}
+            </button>
+          )}
           {user ? (
             <button 
               onClick={handleSignOut}
