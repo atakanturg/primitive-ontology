@@ -176,7 +176,7 @@ export default function Layout() {
       </div>
 
       {/* ── Scroll arrow ───────────────────────────────── */}
-      {isScrollable && location.pathname !== '/signals' && location.pathname !== '/screener' && (
+      {isScrollable && isHome && (
         <motion.button
           onClick={scrollToPosition}
           style={{

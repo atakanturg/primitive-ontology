@@ -6,9 +6,9 @@ import { useAuth } from '../lib/useAuth';
 import { supabase } from '../lib/supabase';
 
 const ROUTES = [
-  { path: '/',         label: 'Overview' },
-  { path: '/signals',  label: 'Signals'  },
-  { path: '/screener', label: 'Screener' },
+  { path: '/',      label: 'HOME' },
+  { path: '/target', label: 'INPUT TARGET' },
+  { path: '/data',   label: 'SEE DATA' },
 ];
 
 const ACCENT = 'var(--accent)';
