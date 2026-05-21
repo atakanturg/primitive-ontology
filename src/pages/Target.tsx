@@ -35,34 +35,23 @@ export function Target() {
   };
 
   useEffect(() => {
-    if (user) {
-      fetchWatchlist();
-      
-      if (supabase) {
-        const channel = supabase
-          .channel('target-watchlist-changes')
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'watchlist',
-              filter: `user_id=eq.${user.id}`
-            },
-            () => {
-              fetchWatchlist();
-            }
-          )
-          .subscribe();
+    if (!user) { setFetching(false); return; }
+    if (!supabase) { setFetching(false); return; }
 
-        return () => {
-          supabase.removeChannel(channel);
-        };
-      }
-    } else {
-      setFetching(false);
-    }
-  }, [user]);
+    fetchWatchlist();
+
+    // Include user.id in channel name to avoid Supabase cache collisions in StrictMode
+    const channel = supabase
+      .channel(`target-watchlist-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'watchlist', filter: `user_id=eq.${user.id}` },
+        fetchWatchlist
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

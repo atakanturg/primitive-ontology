@@ -47,21 +47,16 @@ export function Data() {
     fetchWatchlist();
 
     const channel = supabase
-      .channel('watchlist-changes')
+      .channel(`data-watchlist-${user.id}`)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'watchlist',
-          filter: `user_id=eq.${user.id}`
-        },
-        () => { fetchWatchlist(); }
+        { event: '*', schema: 'public', table: 'watchlist', filter: `user_id=eq.${user.id}` },
+        fetchWatchlist
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     if (activeView) {
