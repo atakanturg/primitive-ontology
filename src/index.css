@@ -144,6 +144,21 @@
 ::-webkit-scrollbar-thumb { background: var(--rule); }
 ::-webkit-scrollbar-thumb:hover { background: var(--ink); }
 
+/* ── Responsive layout ──────────────────────────── */
+.footer-grid {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr;
+  gap: 56px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .footer-grid { grid-template-columns: 1fr 1fr; gap: 40px; }
+}
+@media (max-width: 600px) {
+  .footer-grid { grid-template-columns: 1fr; gap: 32px; }
+  .topmark { top: 16px !important; left: 16px !important; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01s !important; transition-duration: .01s !important; }
   .ambient .smoke { display: none; }

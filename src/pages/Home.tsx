@@ -1,5 +1,40 @@
 import { motion } from 'motion/react';
 
+const RESPONSIVE = `
+  .onto-hero { padding: 200px 96px 80px; }
+  .onto-quote { margin: 80px auto 96px; padding: 56px 80px; }
+  .onto-quote q { font-size: 44px; }
+  .onto-steps { padding: 96px; }
+  .onto-steps-grid { grid-template-columns: repeat(3, 1fr); gap: 56px; }
+  .onto-sources { padding: 32px 96px 120px; }
+  .onto-sources-grid { grid-template-columns: repeat(7, 1fr); gap: 12px; }
+  .onto-cta { padding: 64px 96px; margin: 0 auto 120px; }
+  .onto-cta-title { font-size: 56px; }
+  @media (max-width: 1100px) {
+    .onto-hero { padding: 140px 48px 64px; }
+    .onto-quote { padding: 40px 48px; }
+    .onto-quote q { font-size: 34px; }
+    .onto-steps { padding: 64px 48px; }
+    .onto-sources { padding: 24px 48px 96px; }
+    .onto-sources-grid { grid-template-columns: repeat(4, 1fr); }
+    .onto-cta { padding: 48px; }
+    .onto-cta-title { font-size: 44px; }
+  }
+  @media (max-width: 768px) {
+    .onto-hero { padding: 120px 24px 48px; }
+    .onto-hero h1 { font-size: clamp(40px, 10vw, 72px) !important; }
+    .onto-hero p { font-size: 16px !important; }
+    .onto-quote { margin: 48px 24px 64px; padding: 32px 24px; }
+    .onto-quote q { font-size: 26px; }
+    .onto-steps { padding: 48px 24px; }
+    .onto-steps-grid { grid-template-columns: 1fr !important; gap: 40px; }
+    .onto-sources { padding: 16px 24px 80px; }
+    .onto-sources-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 8px; }
+    .onto-cta { padding: 32px 24px; flex-direction: column !important; align-items: flex-start !important; margin: 0 24px 80px; }
+    .onto-cta-title { font-size: 32px; }
+  }
+`;
+
 const rise = {
   hidden: { y: 18 },
   visible: { y: 0, transition: { duration: 0.9, ease: [0.2, 0.7, 0.3, 1] as [number, number, number, number] } },
@@ -18,9 +53,9 @@ const sourceFade = {
 export function Home() {
   return (
     <div style={{ background: 'var(--paper)' }}>
+      <style>{RESPONSIVE}</style>
       {/* SECTION 1: HERO */}
-      <section style={{
-        padding: '200px 96px 80px',
+      <section className="onto-hero" style={{
         maxWidth: 1080,
         margin: '0 auto',
         textAlign: 'center',
@@ -58,9 +93,7 @@ export function Home() {
       </section>
 
       {/* SECTION 2: PULL QUOTE */}
-      <section style={{
-        margin: '80px auto 96px',
-        padding: '56px 80px',
+      <section className="onto-quote" style={{
         maxWidth: 1080,
         borderTop: '1px solid var(--ink)',
         borderBottom: '1px solid var(--ink)',
@@ -71,10 +104,10 @@ export function Home() {
           whileInView={{ opacity: 1 }}
           transition={{ duration: 0.6 }}
           viewport={{ once: true, margin: '-100px' }}
+          className="onto-quote"
           style={{
             fontFamily: 'var(--f-display)',
             fontStyle: 'italic',
-            fontSize: 44,
             lineHeight: 1.25,
             color: 'var(--accent)',
             margin: 0,
@@ -101,8 +134,7 @@ export function Home() {
       </section>
 
       {/* SECTION 3: HOW IT WORKS */}
-      <section style={{
-        padding: '96px',
+      <section className="onto-steps" style={{
         maxWidth: 1280,
         margin: '0 auto',
       }}>
@@ -128,10 +160,9 @@ export function Home() {
           whileInView="visible"
           viewport={{ once: true, margin: '-100px' }}
           variants={{ visible: { transition: { staggerChildren: 0.12 } } }}
+          className="onto-steps-grid"
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: 56,
           }}
         >
           {[
@@ -193,8 +224,7 @@ export function Home() {
       </section>
 
       {/* SECTION 4: SOURCES */}
-      <section style={{
-        padding: '32px 96px 120px',
+      <section className="onto-sources" style={{
         maxWidth: 1280,
         margin: '0 auto',
       }}>
@@ -215,10 +245,9 @@ export function Home() {
           whileInView="visible"
           viewport={{ once: true, margin: '-100px' }}
           variants={{ visible: { transition: { staggerChildren: 0.06 } } }}
+          className="onto-sources-grid"
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(7, 1fr)',
-            gap: 12,
           }}
         >
           {[
@@ -273,10 +302,8 @@ export function Home() {
       </section>
 
       {/* SECTION 5: CTA BAND */}
-      <section style={{
+      <section className="onto-cta" style={{
         maxWidth: 1280,
-        margin: '0 auto 120px',
-        padding: '64px 96px',
         background: 'var(--accent)',
         backgroundImage: 'radial-gradient(circle, rgba(255,255,255,.5) .7px, transparent .7px)',
         backgroundSize: '14px 14px',
@@ -288,14 +315,14 @@ export function Home() {
         flexWrap: 'wrap',
       }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <span style={{
+          <span className="onto-cta-title" style={{
             fontFamily: 'var(--f-display)',
-            fontSize: 56,
             lineHeight: 1,
             letterSpacing: '-.02em',
             color: 'var(--paper)',
             fontWeight: 400,
             margin: 0,
+            display: 'block',
           }}>
             Secure the data.
           </span>
