@@ -39,6 +39,10 @@ async function handleAnalyze(request: Request, env: any, ctx: any): Promise<Resp
     return json({ error: "Missing required fields" }, 400);
   }
 
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    return json({ error: "Supabase credentials not configured in Worker secrets" }, 503);
+  }
+
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
 
   ctx.waitUntil(processData({ 
