@@ -39,17 +39,20 @@ export function Target() {
 
     fetchWatchlist();
 
-    // Include user.id in channel name to avoid Supabase cache collisions in StrictMode
+    // Timestamp suffix ensures a fresh channel name every mount,
+    // preventing Supabase's internal cache from returning a
+    // stale-subscribed channel in React StrictMode.
+    let active = true;
     const channel = supabase
-      .channel(`target-watchlist-${user.id}`)
+      .channel(`target-watchlist-${user.id}-${Date.now()}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'watchlist', filter: `user_id=eq.${user.id}` },
-        fetchWatchlist
+        () => { if (active) fetchWatchlist(); }
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { active = false; supabase.removeChannel(channel); };
   }, [user?.id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
