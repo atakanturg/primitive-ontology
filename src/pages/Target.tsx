@@ -17,8 +17,7 @@ export function Target() {
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [fetching, setFetching] = useState(true);
 
-  // Configuration: Point this to your Cloudflare Worker domain
-  const BACKEND_URL = "http://ontology.primitive-os.local:3001/api/analyze";
+  const BACKEND_URL = "/api/analyze";
 
   const fetchWatchlist = async () => {
     if (!supabase || !user) return;
