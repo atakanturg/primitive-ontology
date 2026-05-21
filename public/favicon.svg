@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <mask id="m">
+      <image href="/logo.png" x="0" y="0" width="64" height="64"/>
+    </mask>
+  </defs>
+  <rect width="64" height="64" rx="10" fill="oklch(0.45 0.06 240)"/>
+  <rect width="64" height="64" fill="#fafaf7" mask="url(#m)"/>
+</svg>

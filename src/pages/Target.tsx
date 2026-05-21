@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../lib/useAuth';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -18,7 +18,7 @@ export function Target() {
   const [fetching, setFetching] = useState(true);
 
   // Configuration: Point this to your Cloudflare Worker domain
-  const BACKEND_URL = "https://ontology.primitive-os.cc/api/analyze";
+  const BACKEND_URL = "http://ontology.primitive-os.local:3001/api/analyze";
 
   const fetchWatchlist = async () => {
     if (!supabase || !user) return;
@@ -133,30 +133,31 @@ export function Target() {
   }
 
   return (
-    <div className="flex flex-col items-center px-4 mb-24 mt-12 md:mt-24 space-y-16">
+    <div className="flex flex-col items-center px-4 mb-36 mt-16 md:mt-32 space-y-20">
       <div className="max-w-xl w-full">
-        <motion.div 
-          initial={{ opacity: 0, y: 10 }}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white/70 backdrop-blur-xl border border-terra-border rounded-[2rem] p-8 md:p-12 shadow-[0_20px_40px_-10px_rgba(0,0,0,0.05)] text-center relative overflow-hidden"
+          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          className="bg-white/70 backdrop-blur-xl border border-terra-border rounded-[2.5rem] p-10 md:p-14 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.06)] text-center relative overflow-hidden"
         >
-          <div className="absolute inset-0 opacity-[0.03] bg-[url('/noise.svg')] pointer-events-none mix-blend-overlay"></div>
-          
-          <h3 className="text-xs font-bold tracking-[0.3em] text-terra-muted uppercase mb-8">Establish New Target</h3>
-          
-          <form onSubmit={handleSubmit} className="flex flex-col items-center space-y-6 relative z-10">
-            <input 
-              type="text" 
+          <h3 className="text-[10px] font-bold tracking-[0.35em] text-terra-muted uppercase mb-10">
+            Establish New Target
+          </h3>
+
+          <form onSubmit={handleSubmit} className="flex flex-col items-center space-y-7">
+            <input
+              type="text"
               value={ticker}
               onChange={(e) => setTicker(e.target.value)}
               placeholder="ENTER TICKER"
-              className="w-full max-w-sm bg-terra-bg/50 border border-terra-border rounded-xl px-4 py-4 text-center text-xl font-mono uppercase tracking-[0.3em] placeholder:text-terra-muted/40 focus:outline-none focus:border-terra-ink focus:ring-1 focus:ring-terra-ink transition-all"
+              className="w-full max-w-sm bg-terra-bg/60 border border-terra-border rounded-2xl px-6 py-5 text-center text-2xl font-mono uppercase tracking-[0.35em] placeholder:text-terra-muted/35 focus:outline-none focus:border-terra-ink focus:ring-1 focus:ring-terra-ink transition-all"
             />
-            
-            <button 
-              type="submit" 
+
+            <button
+              type="submit"
               disabled={submitted || !ticker.trim()}
-              className="bg-terra-ink text-white px-8 py-3 rounded-full text-xs font-bold tracking-[0.2em] uppercase hover:bg-terra-ink/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-terra-ink text-white px-10 py-4 rounded-full text-[10px] font-bold tracking-[0.25em] uppercase hover:bg-terra-ink/80 transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {submitted ? 'COMMENCING...' : 'COMMENCE SCAN'}
             </button>
@@ -165,22 +166,27 @@ export function Target() {
       </div>
 
       <div className="max-w-xl w-full">
-        <h3 className="text-sm font-bold tracking-[0.3em] text-terra-ink uppercase mb-6 pl-2 border-l-2 border-terra-ink">Watchlist</h3>
+        <h3 className="text-[10px] font-bold tracking-[0.35em] text-terra-ink uppercase mb-8 pl-3 border-l-2 border-terra-ink">
+          Watchlist
+        </h3>
         <div className="space-y-3">
           {watchlist.length === 0 ? (
-             <div className="text-terra-muted font-mono text-sm pl-2">No targets tracking.</div>
+            <div className="text-terra-muted font-mono text-sm pl-3 py-4">No targets tracking.</div>
           ) : (
             watchlist.map(item => (
-              <div key={item.id} className="flex items-center justify-between bg-white/50 border border-terra-border p-4 rounded-xl">
-                <div className="flex items-center gap-4">
-                  <span className="font-mono text-lg font-bold tracking-widest">{item.ticker}</span>
-                  <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 bg-terra-surface text-terra-muted rounded-full">
+              <div
+                key={item.id}
+                className="flex items-center justify-between bg-white/60 border border-terra-border px-6 py-5 rounded-2xl hover:bg-white/80 transition-colors duration-300"
+              >
+                <div className="flex items-center gap-5">
+                  <span className="font-mono text-lg font-bold tracking-[0.25em]">{item.ticker}</span>
+                  <span className="text-[9px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 bg-terra-surface text-terra-muted rounded-full">
                     {item.status}
                   </span>
                 </div>
-                <button 
-                  onClick={() => handleDelete(item.id)} 
-                  className="text-terra-muted hover:text-red-500 transition-colors p-2"
+                <button
+                  onClick={() => handleDelete(item.id)}
+                  className="text-terra-muted hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-50"
                   aria-label="Remove from watchlist"
                 >
                   <Trash2 className="w-4 h-4" />

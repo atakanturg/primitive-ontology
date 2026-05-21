@@ -1,48 +1,150 @@
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Inter:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600&family=Caveat:wght@500;600&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Cormorant Garamond", serif;
-  --font-serif: "Cormorant Garamond", serif;
-  
-  --color-terra-bg: #fdfdfd; /* Pure white/off-white */
-  --color-terra-surface: #f5f5f5; /* Subtle gray */
-  --color-terra-clay: #4a4a4a; /* Dark gray accent instead of clay */
-  --color-terra-sage: #e0e0e0; /* Light gray */
-  --color-terra-ink: #0a0a0a; /* Absolute black */
-  --color-terra-muted: #666666; /* Elegant mid-gray */
-  --color-terra-border: #eaeaea; /* Crisp border */
+  --font-sans:    "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Instrument Serif", "Times New Roman", serif;
+  --font-serif:   "Instrument Serif", "Times New Roman", serif;
+  --font-mono:    "IBM Plex Mono", ui-monospace, monospace;
+  --font-hand:    "Caveat", "Bradley Hand", cursive;
+
+  --color-terra-bg:      #fafaf7;
+  --color-terra-surface: #f3f1ec;
+  --color-terra-clay:    #4a4a4a;
+  --color-terra-sage:    #e0e0e0;
+  --color-terra-ink:     #0a0a0a;
+  --color-terra-muted:   rgba(10,10,10,.55);
+  --color-terra-border:  rgba(10,10,10,.12);
+}
+
+:root {
+  --ink:        #0a0a0a;
+  --ink-2:      #1c1c1c;
+  --paper:      #fafaf7;
+  --paper-2:    #f3f1ec;
+  --rule:       rgba(10,10,10,.12);
+  --muted:      rgba(10,10,10,.55);
+  --muted-2:    rgba(10,10,10,.35);
+
+  --accent:      oklch(0.45 0.06 240);
+  --accent-soft: oklch(0.92 0.02 240);
+
+  --f-display: 'Instrument Serif', serif;
+  --f-mono:    'IBM Plex Mono', monospace;
+  --f-body:    'Inter', sans-serif;
+  --f-hand:    'Caveat', cursive;
+
+  --e-ease: cubic-bezier(.2,.7,.3,1);
+  --r-pill: 999px;
+  --topmark-logo: 48px;
+  --topmark-text: 13px;
 }
 
 @layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
-    @apply bg-terra-bg text-terra-ink font-sans selection:bg-terra-ink selection:text-white;
+    background: var(--paper);
+    color: var(--ink);
+    font: 400 16px/1.55 var(--f-body);
+    -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
+    @apply selection:bg-[#0a0a0a] selection:text-[#fafaf7];
   }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 }
 
-.smooth-shadow {
-  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.08); /* Sophisticated deep shadow */
+.ambient {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-color: var(--paper);
+  background-image: radial-gradient(circle, rgba(10,10,10,.16) .7px, transparent .7px);
+  background-size: 14px 14px;
+}
+.ambient .smoke {
+  position: absolute; border-radius: 50%; filter: blur(40px);
+  background: radial-gradient(circle, rgba(10,10,10,.07), transparent 65%);
+  animation: smoke-drift 28s ease-in-out infinite alternate;
+}
+.ambient .smoke.s1 { width: 380px; height: 380px; left: 8%;  top: 12%; }
+.ambient .smoke.s2 { width: 520px; height: 520px; right: 6%; top: 30%; animation-duration: 36s; animation-direction: alternate-reverse; }
+.ambient .smoke.s3 { width: 300px; height: 300px; left: 32%; bottom: 8%; animation-duration: 44s; }
+@keyframes smoke-drift {
+  0%   { transform: translate(0,0) scale(1); }
+  50%  { transform: translate(60px,-40px) scale(1.08); }
+  100% { transform: translate(-40px,30px) scale(.95); }
 }
 
-.natural-gradient {
-  background: linear-gradient(135deg, var(--color-terra-bg) 0%, var(--color-terra-surface) 100%);
+.hand {
+  font-family: var(--f-hand); font-weight: 600; font-size: 1.18em;
+  letter-spacing: -.005em; color: var(--accent);
+  display: inline-block;
+  transform: translateY(.04em) rotate(-1.5deg);
+  transform-origin: left bottom;
 }
 
-::-webkit-scrollbar {
-  width: 4px; /* Thin, elegant scrollbar */
+.mark { display: inline-block; flex-shrink: 0; }
+.mark > .glyph {
+  display: block; width: 100%; height: 100%;
+  background: currentColor;
+  -webkit-mask: url('/logo.png') center / contain no-repeat;
+          mask: url('/logo.png') center / contain no-repeat;
 }
 
-::-webkit-scrollbar-track {
-  background: var(--color-terra-bg);
+.topmark {
+  position: absolute; top: 32px; left: 96px; z-index: 100;
+  display: inline-flex; align-items: center; gap: 14px;
+  padding: 10px 20px 10px 10px;
+  background: rgba(250,250,247,.82);
+  backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid rgba(10,10,10,.08);
+  border-radius: var(--r-pill);
+  box-shadow: 0 12px 40px rgba(10,10,10,.04);
+  text-decoration: none;
+  transition: box-shadow .25s var(--e-ease);
+}
+@media (max-width: 900px) { .topmark { top: 20px; left: 20px; padding: 8px 16px 8px 8px; } }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 14px 22px;
+  background: var(--paper); color: var(--ink); border: 1px solid var(--ink);
+  border-radius: var(--r-pill);
+  font: 500 10px/1 var(--f-mono); letter-spacing: .16em; text-transform: uppercase;
+  text-decoration: none; cursor: pointer;
+  transition: background .2s var(--e-ease), color .2s var(--e-ease);
+}
+.btn:hover { background: var(--ink); color: var(--paper); }
+.btn-accent  { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+.btn-accent:hover { background: var(--ink); border-color: var(--ink); }
+.btn-ghost   { background: transparent; border-color: var(--rule); color: var(--muted); }
+.btn-ghost:hover { background: var(--paper-2); color: var(--ink); border-color: var(--ink); }
+.btn-on-ink  { background: var(--paper); color: var(--ink); border-color: var(--paper); }
+.btn-on-ink:hover { background: transparent; color: var(--paper); border-color: var(--paper); }
+
+.status-dot {
+  position: fixed; top: 28px; right: 40px; z-index: 100;
+  display: inline-flex; align-items: center; gap: 10px;
+  font: 500 9px/1 var(--f-mono); letter-spacing: .18em; color: var(--muted);
+  pointer-events: none;
+}
+.status-dot .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: oklch(0.65 0.13 145);
+  animation: pulse-green 2.4s var(--e-ease) infinite;
+}
+@keyframes pulse-green {
+  0%   { box-shadow: 0 0 0 0 oklch(0.65 0.13 145 / .5); }
+  70%  { box-shadow: 0 0 0 8px oklch(0.65 0.13 145 / 0); }
+  100% { box-shadow: 0 0 0 0 oklch(0.65 0.13 145 / 0); }
 }
 
-::-webkit-scrollbar-thumb {
-  background: var(--color-terra-border);
-}
+::-webkit-scrollbar       { width: 4px; }
+::-webkit-scrollbar-track { background: var(--paper); }
+::-webkit-scrollbar-thumb { background: var(--rule); }
+::-webkit-scrollbar-thumb:hover { background: var(--ink); }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-terra-ink);
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01s !important; transition-duration: .01s !important; }
+  .ambient .smoke { display: none; }
 }
-

@@ -1,32 +1,33 @@
-import { motion, AnimatePresence } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { Menu, X, LogIn, LogOut, Mail } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/useAuth';
 import { supabase } from '../lib/supabase';
 
+const ROUTES = [
+  { path: '/',         label: 'Overview' },
+  { path: '/signals',  label: 'Signals'  },
+  { path: '/screener', label: 'Screener' },
+];
+
+const ACCENT = 'var(--accent)';
+
 export function Navigation() {
-  const [isOpen, setIsOpen] = useState(true); 
+  const [isOpen, setIsOpen] = useState(true);
   const location = useLocation();
   const { user } = useAuth();
   const [authLoading, setAuthLoading] = useState(false);
   const [subscribeLoading, setSubscribeLoading] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('isSubscribed') === 'true';
-    }
+    if (typeof window !== 'undefined') return localStorage.getItem('isSubscribed') === 'true';
     return false;
   });
 
   const handleSignIn = async () => {
     if (!supabase) return;
     setAuthLoading(true);
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin,
-      }
-    });
+    await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });
     setAuthLoading(false);
   };
 
@@ -38,11 +39,7 @@ export function Navigation() {
   };
 
   const handleSubscribe = async () => {
-    if (!user) {
-      alert("Please sign in to join the mailing list.");
-      return;
-    }
-
+    if (!user) { alert('Please sign in to join the mailing list.'); return; }
     setSubscribeLoading(true);
     try {
       const response = await fetch('/api/mailing-list', {
@@ -50,7 +47,6 @@ export function Navigation() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: user.email }),
       });
-
       if (response.ok) {
         setIsSubscribed(true);
         localStorage.setItem('isSubscribed', 'true');
@@ -58,97 +54,134 @@ export function Navigation() {
         const data = await response.json();
         alert(`Error: ${data.error || 'Failed to subscribe'}`);
       }
-    } catch (error) {
-      alert("An error occurred. Please try again later.");
-    } finally {
-      setSubscribeLoading(false);
-    }
+    } catch { alert('An error occurred. Please try again later.'); }
+    finally { setSubscribeLoading(false); }
   };
 
-  const routes = [
-    { path: '/', label: 'Overview' },
-    { path: '/target', label: 'Input Target' },
-    { path: '/data', label: 'See Data' },
-  ];
+  const pill: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: 8,
+    background: 'rgba(250,250,247,.82)',
+    backdropFilter: 'blur(20px) saturate(160%)',
+    border: '1px solid rgba(10,10,10,.08)',
+    borderRadius: 'var(--r-pill)',
+    boxShadow: '0 12px 40px rgba(10,10,10,.04), 0 1px 0 rgba(255,255,255,.5) inset',
+    pointerEvents: 'auto',
+  };
 
   return (
-    <div className="w-full bg-terra-bg border-t border-terra-border py-4 px-4 flex justify-center items-center h-[88px] relative">
-      <motion.nav 
-        layout
-        className="flex items-center p-2 bg-terra-ink backdrop-blur-md rounded-[3rem] shadow-2xl overflow-hidden min-h-[64px]"
-      >
+    <div style={{ position: 'fixed', bottom: 24, left: 0, right: 0, display: 'flex', justifyContent: 'center', zIndex: 1000, pointerEvents: 'none' }}>
+      <div style={pill}>
+
+        {/* Toggle */}
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center justify-center w-12 h-12 rounded-full text-white hover:bg-white/10 transition-colors flex-shrink-0"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: '50%', color: 'var(--ink)', border: 'none', cursor: 'pointer', transition: 'background .2s', flexShrink: 0 }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(10,10,10,.05)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
         >
-          {isOpen ? <X className="w-5 h-5 stroke-[1.5]" /> : <Menu className="w-5 h-5 stroke-[1.5]" />}
+          {isOpen ? <X size={18} /> : <Menu size={18} />}
         </button>
-        
-        <AnimatePresence mode="popLayout">
+
+        {/* Nav items */}
+        <AnimatePresence>
           {isOpen && (
             <motion.div
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: "auto", opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-              className="flex items-center whitespace-nowrap overflow-hidden"
+              initial={{ width: 0, opacity: 0 }} animate={{ width: 'auto', opacity: 1 }} exit={{ width: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              style={{ overflow: 'hidden' }}
             >
-              <div className="flex pr-2 pl-2 gap-2">
-                {routes.map((route) => {
+              <div style={{ display: 'flex', gap: 4, paddingRight: 4 }}>
+                {ROUTES.map(route => {
                   const isActive = location.pathname === route.path;
                   return (
                     <Link
                       key={route.path}
                       to={route.path}
-                      className={`px-5 md:px-6 py-3 rounded-[2.5rem] transition-all duration-500 text-[9px] md:text-[10px] font-medium uppercase tracking-[0.2em] ${
-                        isActive 
-                          ? 'bg-white text-terra-ink shadow-sm' 
-                          : 'text-terra-bg/60 hover:text-white hover:bg-white/10'
-                      }`}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 8,
+                        padding: '11px 18px',
+                        background: isActive ? ACCENT : 'transparent',
+                        color: isActive ? 'var(--paper)' : 'var(--muted)',
+                        border: 'none', textDecoration: 'none', borderRadius: 'var(--r-pill)',
+                        fontFamily: 'var(--f-mono)', fontSize: 10, fontWeight: 500,
+                        letterSpacing: '.16em', textTransform: 'uppercase',
+                        transition: 'background .2s, color .2s', whiteSpace: 'nowrap',
+                      }}
+                      onMouseEnter={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.background = 'rgba(10,10,10,.05)'; (e.currentTarget as HTMLElement).style.color = 'var(--ink)'; } }}
+                      onMouseLeave={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--muted)'; } }}
                     >
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: isActive ? 'var(--paper)' : ACCENT, opacity: isActive ? 1 : 0.6, flexShrink: 0 }} />
                       {route.label}
                     </Link>
                   );
                 })}
+
+                {/* Join List — hidden after subscribed */}
+                {!isSubscribed && (
+                  <button
+                    onClick={handleSubscribe}
+                    disabled={subscribeLoading}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 8,
+                      padding: '11px 18px', background: 'transparent', color: 'var(--muted)',
+                      border: '1px solid var(--rule)', borderRadius: 'var(--r-pill)',
+                      fontFamily: 'var(--f-mono)', fontSize: 10, fontWeight: 500,
+                      letterSpacing: '.16em', textTransform: 'uppercase',
+                      cursor: 'pointer', whiteSpace: 'nowrap', transition: 'background .2s, color .2s',
+                      opacity: subscribeLoading ? 0.5 : 1,
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(10,10,10,.05)'; (e.currentTarget as HTMLElement).style.color = 'var(--ink)'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--muted)'; }}
+                  >
+                    <Mail size={12} />
+                    {subscribeLoading ? '...' : 'Join List'}
+                  </button>
+                )}
+
+                {/* Auth — Sign Out when logged in, Sign In when not */}
+                {user ? (
+                  <button
+                    onClick={handleSignOut}
+                    disabled={authLoading}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 8,
+                      padding: '11px 18px', background: 'transparent', color: 'var(--muted)',
+                      border: 'none', borderRadius: 'var(--r-pill)',
+                      fontFamily: 'var(--f-mono)', fontSize: 10, fontWeight: 500,
+                      letterSpacing: '.16em', textTransform: 'uppercase',
+                      cursor: 'pointer', whiteSpace: 'nowrap', transition: 'background .2s, color .2s',
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(10,10,10,.05)'; (e.currentTarget as HTMLElement).style.color = 'var(--ink)'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--muted)'; }}
+                  >
+                    <LogOut size={12} />
+                    Sign Out
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSignIn}
+                    disabled={authLoading}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 8,
+                      padding: '11px 18px', background: ACCENT, color: 'var(--paper)',
+                      border: 'none', borderRadius: 'var(--r-pill)',
+                      fontFamily: 'var(--f-mono)', fontSize: 10, fontWeight: 500,
+                      letterSpacing: '.16em', textTransform: 'uppercase',
+                      cursor: 'pointer', whiteSpace: 'nowrap', transition: 'background .2s',
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--ink)'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = ACCENT; }}
+                  >
+                    <LogIn size={12} />
+                    Sign In
+                  </button>
+                )}
               </div>
             </motion.div>
           )}
         </AnimatePresence>
-      </motion.nav>
-
-      {supabase && (
-        <div className="absolute right-4 md:right-8 hidden md:flex items-center gap-3 z-10">
-          {!isSubscribed && (
-            <button 
-              onClick={handleSubscribe}
-              disabled={subscribeLoading}
-              className="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase text-terra-muted hover:text-terra-ink transition-colors px-4 py-2 bg-white/50 border border-terra-border rounded-full disabled:opacity-50"
-            >
-              <Mail className="w-3 h-3" />
-              {subscribeLoading ? '...' : 'Join Mailing List'}
-            </button>
-          )}
-          {user ? (
-            <button 
-              onClick={handleSignOut}
-              disabled={authLoading}
-              className="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase text-terra-muted hover:text-terra-ink transition-colors px-4 py-2 bg-white/50 border border-terra-border rounded-full"
-            >
-              <LogOut className="w-3 h-3" />
-              Sign Out
-            </button>
-          ) : (
-            <button 
-              onClick={handleSignIn}
-              disabled={authLoading}
-              className="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase text-terra-muted hover:text-terra-ink transition-colors px-4 py-2 bg-white/50 border border-terra-border rounded-full"
-            >
-              <LogIn className="w-3 h-3" />
-              Sign In
-            </button>
-          )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
