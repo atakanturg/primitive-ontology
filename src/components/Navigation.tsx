@@ -6,9 +6,11 @@ import { useAuth } from '../lib/useAuth';
 import { supabase } from '../lib/supabase';
 
 const ROUTES = [
-  { path: '/',      label: 'HOME' },
-  { path: '/target', label: 'INPUT TARGET' },
-  { path: '/data',   label: 'SEE DATA' },
+  { path: '/',         label: 'HOME' },
+  { path: '/target',   label: 'INPUT TARGET' },
+  { path: '/signals',  label: 'SIGNALS' },
+  { path: '/screener', label: 'SCREENER' },
+  { path: '/data',     label: 'SEE DATA' },
 ];
 
 const ACCENT = 'var(--accent)';
@@ -27,7 +29,7 @@ export function Navigation() {
   const handleSignIn = async () => {
     if (!supabase) return;
     setAuthLoading(true);
-    await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });
+    await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: 'https://ontology.primitive-os.cc' } });
     setAuthLoading(false);
   };
 

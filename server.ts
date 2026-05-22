@@ -134,13 +134,17 @@ ${newsData.status === 'fulfilled' ? newsData.value : 'Unavailable'}`.trim();
 
     const analysis = await askGroq(userPrompt, env.GROQ_API_KEY, true, systemPrompt);
 
+    // First get current count, then update atomically
+    const { data: currentRow } = await supabase.from("watchlist").select("analysis_count").eq("id", row_id).single();
+    const newCount = (currentRow?.analysis_count ?? 0) + 1;
+
     await supabase.from("watchlist").update({
       ...analysis,
       political_signal_data: senateData.status === 'fulfilled' ? senateData.value : null,
       status: "updated",
       last_updated: new Date().toISOString(),
       last_analyzed_at: new Date().toISOString(),
-      analysis_count: (await supabase.from("watchlist").select("analysis_count").eq("id", row_id).single()).data?.analysis_count + 1,
+      analysis_count: newCount,
     }).eq("id", row_id);
 
   } catch (error: any) {
@@ -249,7 +253,7 @@ async function askGroq(prompt: string, apiKey: string, isJson: boolean, systemMs
 const content = data?.choices?.[0]?.message?.content;
 
 if (!content) {
-  throw new Error(`AI Gateway Failure: The model returned an empty response for ${ticker}. This often happens due to content filtering or malformed data bundles.`);
+  throw new Error(`AI Gateway Failure: The model returned an empty response. This often happens due to content filtering or malformed data bundles. Raw response: ${JSON.stringify(data?.error || data?.choices?.[0]?.finish_reason || 'unknown')}`);
 }
   return isJson ? JSON.parse(content.replace(/`{3}json|`{3}/g, "").trim()) : content;
 }
